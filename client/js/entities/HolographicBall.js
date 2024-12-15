@@ -11,7 +11,7 @@ export class HolographicBall extends THREE.Object3D {
         // Movement properties
         this.position.copy(position);
         this.direction = direction.normalize();
-        this.health = 50;
+        this.health = 25; // Starting with 50% health so it dies in one hit
         this.spawnTime = Date.now();
         this.lifespan = 50000; // 50 seconds lifespan
 

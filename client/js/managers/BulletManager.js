@@ -79,7 +79,7 @@ export class BulletManager {
             const triggerButton = gamepad.buttons[this.QUEST3_MAPPING.buttons.trigger];
 
             if (triggerButton.pressed && !this.lastTriggerState[i]) {
-                this.createBullet(controller, null, 2.0); // Increased bullet speed to 2.0
+                this.createBullet(controller, null, 0.3); // Set bullet speed to 0.3
             }
             this.lastTriggerState[i] = triggerButton.pressed;
         });
