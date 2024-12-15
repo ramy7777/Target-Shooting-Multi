@@ -274,14 +274,17 @@ export class World {
         this.engine.scene.add(roomGroup);
         this.holographicRoom = roomGroup;
 
-        // Add animation to update shader time
-        this.engine.animationManager.addAnimation(() => {
+        // Update shader time in the render loop
+        const updateShaderTime = () => {
             roomGroup.children.forEach(mesh => {
-                if (mesh.material.uniforms) {
+                if (mesh.material && mesh.material.uniforms) {
                     mesh.material.uniforms.time.value = this.clock.getElapsedTime();
                 }
             });
-        });
+        };
+
+        // Add the update function to the world's update method
+        this.shaderTimeUpdate = updateShaderTime;
     }
 
     addGlowingEdges() {
@@ -311,7 +314,10 @@ export class World {
     }
 
     update() {
-        // No shader updates needed for GLB model
+        // Update shader time for holographic effects
+        if (this.shaderTimeUpdate) {
+            this.shaderTimeUpdate();
+        }
     }
 
     highlightObject(object, highlight) {
