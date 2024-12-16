@@ -124,6 +124,11 @@ export class BirdManager {
                 // Update score immediately for both host and client
                 this.engine.scoreManager.updateScore(bullet.shooterId, 10);
 
+                // Play destruction sound effect
+                if (this.engine.audioManager) {
+                    this.engine.audioManager.playBirdDestruction();
+                }
+
                 // If we're the host, send the hit event
                 if (this.engine.networkManager && this.engine.networkManager.isHost) {
                     this.engine.networkManager.send({
@@ -186,6 +191,11 @@ export class BirdManager {
     handleNetworkBirdHit(data) {
         // Remove the bird that was hit
         this.removeBird(data.birdId);
+        
+        // Play destruction sound effect
+        if (this.engine.audioManager) {
+            this.engine.audioManager.playBirdDestruction();
+        }
         
         // Update score for the shooter
         if (data.bulletShooterId) {

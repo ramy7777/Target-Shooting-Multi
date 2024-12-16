@@ -11,6 +11,7 @@ import { BirdManager } from '../managers/BirdManager.js';
 import { ScoreManager } from '../managers/ScoreManager.js';
 import { UIManager } from '../managers/UIManager.js';
 import { VoiceManager } from '../managers/VoiceManager.js';
+import AudioManager from '../managers/AudioManager.js';
 
 export class Engine {
     constructor() {
@@ -62,6 +63,7 @@ export class Engine {
         this.uiManager = new UIManager(this);
         this.playerManager = new PlayerManager(this);
         this.sessionManager = new SessionManager(this);
+        this.audioManager = new AudioManager(); // Initialize AudioManager
         this.world = new World(this);
         this.voiceManager = new VoiceManager(this);
 
