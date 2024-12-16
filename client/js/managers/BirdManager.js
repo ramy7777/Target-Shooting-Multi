@@ -119,8 +119,12 @@ export class BirdManager {
             const intersection = this.checkBulletSpherePath(bulletPath, birdSphere);
             
             if (intersection) {
+                // Get the bird's position for the explosion effect
+                const explosionPosition = bird.position.clone();
+
                 // Remove the bird
                 this.removeBird(id);
+
                 // Update score immediately for both host and client
                 this.engine.scoreManager.updateScore(bullet.shooterId, 10);
 
@@ -129,13 +133,19 @@ export class BirdManager {
                     this.engine.audioManager.playBirdDestruction();
                 }
 
+                // Create particle explosion
+                if (this.engine.particleManager) {
+                    this.engine.particleManager.createExplosion(explosionPosition);
+                }
+
                 // If we're the host, send the hit event
                 if (this.engine.networkManager && this.engine.networkManager.isHost) {
                     this.engine.networkManager.send({
                         type: 'birdHit',
                         data: {
                             birdId: id,
-                            bulletShooterId: bullet.shooterId
+                            bulletShooterId: bullet.shooterId,
+                            position: explosionPosition.toArray()
                         }
                     });
                 }
@@ -189,12 +199,22 @@ export class BirdManager {
     }
 
     handleNetworkBirdHit(data) {
+        // Get the bird's position before removing it
+        const bird = this.birds.get(data.birdId);
+        const position = bird ? bird.position.clone() : new THREE.Vector3();
+
         // Remove the bird that was hit
         this.removeBird(data.birdId);
         
         // Play destruction sound effect
         if (this.engine.audioManager) {
             this.engine.audioManager.playBirdDestruction();
+        }
+
+        // Create particle explosion using the position from the network message
+        if (this.engine.particleManager) {
+            const explosionPosition = data.position ? new THREE.Vector3().fromArray(data.position) : position;
+            this.engine.particleManager.createExplosion(explosionPosition);
         }
         
         // Update score for the shooter

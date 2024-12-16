@@ -12,6 +12,7 @@ import { ScoreManager } from '../managers/ScoreManager.js';
 import { UIManager } from '../managers/UIManager.js';
 import { VoiceManager } from '../managers/VoiceManager.js';
 import AudioManager from '../managers/AudioManager.js';
+import { ParticleManager } from '../managers/ParticleManager.js';
 
 export class Engine {
     constructor() {
@@ -64,6 +65,7 @@ export class Engine {
         this.playerManager = new PlayerManager(this);
         this.sessionManager = new SessionManager(this);
         this.audioManager = new AudioManager(); // Initialize AudioManager
+        this.particleManager = new ParticleManager(this);
         this.world = new World(this);
         this.voiceManager = new VoiceManager(this);
 
@@ -133,9 +135,10 @@ export class Engine {
         this.bulletManager.update(delta);
         this.birdManager.update(delta);
         this.uiManager.update();
-        this.uiManager.updateTimer(); // Update timer every frame
+        this.uiManager.updateTimer();
         this.scoreManager.update(delta);
-        this.world.update(); // Update terrain shader
+        this.world.update();
+        this.particleManager.update();
 
         // Update OrbitControls only if not in VR
         if (!this.renderer.xr.isPresenting) {
