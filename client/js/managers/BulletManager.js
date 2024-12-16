@@ -80,6 +80,10 @@ export class BulletManager {
 
             if (triggerButton.pressed && !this.lastTriggerState[i]) {
                 this.createBullet(controller, null, 0.3); // Changed from 2.0 to 0.3 to match Bullet.js
+                // Add stronger haptic feedback for shooting
+                if (this.engine.inputManager) {
+                    this.engine.inputManager.triggerHapticFeedback(gamepad, 0.8, 100);
+                }
             }
             this.lastTriggerState[i] = triggerButton.pressed;
         });

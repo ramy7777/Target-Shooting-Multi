@@ -138,6 +138,18 @@ export class BirdManager {
                     this.engine.particleManager.createExplosion(explosionPosition);
                 }
 
+                // Add strong haptic feedback for bird destruction
+                if (this.engine.renderer.xr.isPresenting) {
+                    const session = this.engine.renderer.xr.getSession();
+                    if (session && session.inputSources) {
+                        session.inputSources.forEach(inputSource => {
+                            if (inputSource.gamepad && this.engine.inputManager) {
+                                this.engine.inputManager.triggerHapticFeedback(inputSource.gamepad, 1.0, 150);
+                            }
+                        });
+                    }
+                }
+
                 // If we're the host, send the hit event
                 if (this.engine.networkManager && this.engine.networkManager.isHost) {
                     this.engine.networkManager.send({
