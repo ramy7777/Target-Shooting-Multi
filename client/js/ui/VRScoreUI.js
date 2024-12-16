@@ -272,62 +272,120 @@ export class VRScoreUI {
     }
 
     createStartButton() {
-        // Create button geometry with more depth for better ray intersection
-        const geometry = new THREE.BoxGeometry(1.2, 0.6, 0.2);
-        
-        // Create materials for different button states
+        // Create button base geometry with rounded edges
+        const geometry = new THREE.BoxGeometry(1.4, 0.7, 0.15);
+        geometry.translate(0, 0, 0.075); // Move pivot to back face
+
+        // Create modern materials with emissive glow
         const materials = {
-            default: new THREE.MeshPhongMaterial({ 
-                color: 0x22cc22,
+            default: new THREE.MeshStandardMaterial({ 
+                color: 0x1a9fff,
+                emissive: 0x1a9fff,
+                emissiveIntensity: 0.5,
+                metalness: 0.7,
+                roughness: 0.3,
                 transparent: true,
-                opacity: 0.9
+                opacity: 0.95
             }),
-            hover: new THREE.MeshPhongMaterial({ 
-                color: 0x44ff44,
+            hover: new THREE.MeshStandardMaterial({ 
+                color: 0x4db8ff,
+                emissive: 0x4db8ff,
+                emissiveIntensity: 0.8,
+                metalness: 0.7,
+                roughness: 0.2,
                 transparent: true,
-                opacity: 0.9
+                opacity: 0.95
             }),
-            pressed: new THREE.MeshPhongMaterial({ 
-                color: 0x118811,
+            pressed: new THREE.MeshStandardMaterial({ 
+                color: 0x0066cc,
+                emissive: 0x0066cc,
+                emissiveIntensity: 0.3,
+                metalness: 0.7,
+                roughness: 0.4,
                 transparent: true,
-                opacity: 0.9
+                opacity: 0.95
             })
         };
 
         // Create button mesh
         this.startButton = new THREE.Mesh(geometry, materials.default);
-        this.startButton.position.set(0, -2, 0.1); // Move slightly forward for better ray intersection
+        this.startButton.position.set(0, -2, 0.1);
         this.startButton.userData = {
             type: 'button',
             materials: materials,
             isStartButton: true
         };
 
-        // Create text as a separate mesh
-        const canvas = document.createElement('canvas');
-        canvas.width = 512;
-        canvas.height = 256;
-        const context = canvas.getContext('2d');
-        context.fillStyle = '#ffffff';
-        context.font = 'bold 128px Arial';
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.fillText('START', canvas.width/2, canvas.height/2);
-        
-        const textTexture = new THREE.CanvasTexture(canvas);
-        const textMaterial = new THREE.MeshBasicMaterial({
-            map: textTexture,
+        // Add glow effect
+        const glowGeometry = new THREE.PlaneGeometry(1.6, 0.9);
+        const glowMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                color: { value: new THREE.Color(0x1a9fff) },
+                time: { value: 0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 color;
+                uniform float time;
+                varying vec2 vUv;
+                void main() {
+                    float dist = length(vUv - vec2(0.5));
+                    float pulse = 0.4 + 0.2 * sin(time * 3.0);
+                    float alpha = smoothstep(0.5, 0.2, dist) * pulse;
+                    gl_FragColor = vec4(color, alpha * 0.5);
+                }
+            `,
             transparent: true,
-            side: THREE.DoubleSide
+            side: THREE.DoubleSide,
+            depthWrite: false
         });
-        
-        const textGeometry = new THREE.PlaneGeometry(1, 0.5);
-        const textMesh = new THREE.Mesh(textGeometry, textMaterial);
-        textMesh.position.set(0, 0, 0.11); // Position text slightly in front of button
-        this.startButton.add(textMesh);
+
+        const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
+        glowMesh.position.set(0, 0, -0.05);
+        this.startButton.add(glowMesh);
+
+        // Create text with modern font and better contrast
+        if (this.font) {
+            const textGeometry = new TextGeometry('START', {
+                font: this.font,
+                size: 0.2,
+                height: 0,
+                curveSegments: 12,
+                bevelEnabled: false
+            });
+
+            textGeometry.computeBoundingBox();
+            const centerOffset = -(textGeometry.boundingBox.max.x - textGeometry.boundingBox.min.x) / 2;
+            const textMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                emissive: 0xffffff,
+                emissiveIntensity: 0.5,
+                metalness: 0,
+                roughness: 0.2
+            });
+
+            const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+            textMesh.position.set(centerOffset, -0.07, 0.16);
+            this.startButton.add(textMesh);
+        }
 
         // Add to scoreGroup
         this.scoreGroup.add(this.startButton);
+
+        // Start glow animation
+        const animate = () => {
+            if (glowMaterial && !this.engine.uiManager.gameStarted) {
+                glowMaterial.uniforms.time.value = performance.now() * 0.001;
+            }
+            requestAnimationFrame(animate);
+        };
+        animate();
     }
 
     updatePlayerScore(playerId, score, rank) {
