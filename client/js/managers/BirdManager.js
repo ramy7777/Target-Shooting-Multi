@@ -10,20 +10,26 @@ export class BirdManager {
         this.maxBirds = 6; // Maximum number of birds allowed
         this.isSpawning = false;
 
-        // Adjust spawn boundaries to be within room
-        const spawnBoundaries = {
-            x: { min: -2, max: 2 },
-            y: { min: 0.5, max: 2 },
-            z: { min: -2, max: 2 }
+        // Match spawn boundaries exactly with holographic room dimensions
+        const roomDimensions = {
+            width: 5,    // Room width is 5 meters
+            height: 3,   // Room height is 3 meters
+            depth: 3,    // Room depth is 3 meters
+            y: 2        // Room is 2 meters above floor
         };
 
+        // Calculate spawn boundaries to be inside the border lines (2% inset from edges)
+        const borderInset = 0.02; // Matches the border thickness in shader (0.02)
+        const safetyPadding = 0.1; // Additional 10cm safety padding for sphere size
+        const totalPadding = borderInset + safetyPadding;
+
         this.spawnBoundary = {
-            minX: spawnBoundaries.x.min,    // Half of roomWidth (5/2)
-            maxX: spawnBoundaries.x.max,
-            minY: spawnBoundaries.y.min,     // roomY (2) - 1 meter
-            maxY: spawnBoundaries.y.max,     // roomY (2) + roomHeight (3) - 1 meter
-            minZ: spawnBoundaries.z.min,  // Half of roomDepth (3/2)
-            maxZ: spawnBoundaries.z.max
+            minX: -(roomDimensions.width / 2) + totalPadding,
+            maxX: (roomDimensions.width / 2) - totalPadding,
+            minY: roomDimensions.y + totalPadding - 1.5,
+            maxY: roomDimensions.y + roomDimensions.height - totalPadding - 1.5,
+            minZ: -(roomDimensions.depth / 2) + totalPadding,
+            maxZ: (roomDimensions.depth / 2) - totalPadding
         };
     }
 
