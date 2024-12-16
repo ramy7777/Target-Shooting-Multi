@@ -13,16 +13,27 @@ export class NetworkManager {
         this.onConnect = null; // Callback for when connection is established
         this.currentRoom = null; // Track current room
         this.isHost = false; // Track if this client is the host
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 5;
+        this.reconnectDelay = 1000; // Start with 1 second delay
     }
 
     async connect() {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            console.log('[NETWORK] Already connected');
+            return Promise.resolve();
+        }
+
         return new Promise((resolve, reject) => {
             try {
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 this.ws = new WebSocket(`${protocol}//${window.location.host}`);
 
                 this.ws.onopen = () => {
+                    console.log('[NETWORK] Connected successfully');
                     this.connected = true;
+                    this.reconnectAttempts = 0;
+                    this.reconnectDelay = 1000;
                     if (this.onConnect) {
                         this.onConnect();
                     }
@@ -30,19 +41,22 @@ export class NetworkManager {
                 };
                 
                 this.ws.onclose = () => {
+                    console.log('[NETWORK] Connection closed');
                     this.connected = false;
                     this.currentRoom = null; // Clear room on disconnect
                     this.clearPlayers(); // Clear all players on disconnect
+                    this.attemptReconnect();
                 };
                 
                 this.ws.onerror = (error) => {
-                    console.error('WebSocket error:', error);
+                    console.error('[NETWORK] WebSocket error:', error);
+                    this.connected = false;
                     reject(error);
                 };
                 
                 this.ws.onmessage = (event) => this.handleMessage(event);
             } catch (error) {
-                console.error('Failed to connect:', error);
+                console.error('[NETWORK] Failed to connect:', error);
                 reject(error);
             }
         });
@@ -77,10 +91,18 @@ export class NetworkManager {
 
     handleMessage(message) {
         const data = JSON.parse(message.data);
-        
-        switch(data.type) {
+        console.log('[NETWORK] Received message:', data);
+
+        // Don't process our own messages
+        if (data.senderId === this.localPlayerId) {
+            console.log('[NETWORK] Ignoring own message');
+            return;
+        }
+
+        switch (data.type) {
             case 'init':
                 this.localPlayerId = data.id;
+                console.log('[NETWORK] Initialized with ID:', this.localPlayerId);
                 break;
                 
             case 'hostConfirm':
@@ -174,29 +196,37 @@ export class NetworkManager {
                 break;
 
             case 'birdSpawned':
-                if (data.senderId !== this.localPlayerId) {
-                    console.debug('[DEBUG] Received bird spawn message:', data);
+                if (this.engine.birdManager) {
                     this.engine.birdManager.handleNetworkBirdSpawn(data.data);
                 }
                 break;
 
-            case 'birdRemoved':
-                this.engine.birdManager.handleNetworkBirdRemoved(data.data);
-                break;
-
-            case 'birdKilled':
-                console.debug('[DEBUG] Received bird kill message:', data);
-                this.engine.birdManager.handleBirdKilled(data.data);
-                break;
-
             case 'birdHit':
-                console.debug('[DEBUG] Received bird hit message:', data);
-                this.engine.birdManager.handleNetworkBirdHit(data.data);
+                if (this.engine.birdManager) {
+                    this.engine.birdManager.handleNetworkBirdHit(data.data);
+                }
                 break;
 
             case 'gameStart':
-                console.debug('[DEBUG] Received game start message:', data);
-                this.engine.handleNetworkMessage(data, data.senderId);
+                console.log('[NETWORK] Received game start message. Data:', data.data, 'Sender:', data.senderId);
+                if (this.engine.uiManager) {
+                    if (!data.data || !data.data.startTime) {
+                        console.error('[NETWORK] Invalid game start data:', data);
+                        return;
+                    }
+                    this.engine.uiManager.handleNetworkGameStart(data.data);
+                } else {
+                    console.error('[NETWORK] UIManager not found for game start');
+                }
+                break;
+
+            case 'gameEnd':
+                console.log('[NETWORK] Received game end message from:', data.senderId);
+                if (this.engine.uiManager) {
+                    this.engine.uiManager.handleNetworkGameEnd();
+                } else {
+                    console.error('[NETWORK] UIManager not found for game end');
+                }
                 break;
 
             case 'voice_ready':
@@ -227,7 +257,7 @@ export class NetworkManager {
                 break;
 
             default:
-                console.warn('Unknown message type:', data.type);
+                console.warn('[NETWORK] Unknown message type:', data.type);
         }
     }
 
@@ -319,12 +349,43 @@ export class NetworkManager {
     }
 
     send(data) {
-        if (this.connected && this.ws && this.ws.readyState === WebSocket.OPEN) {
-            // Add room code to all messages if in a room
-            if (this.currentRoom && !data.roomCode) {
-                data.roomCode = this.currentRoom;
-            }
-            this.ws.send(JSON.stringify(data));
+        if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            console.error('[NETWORK] Cannot send message - socket not connected. Attempting to reconnect...');
+            this.connect().catch(error => {
+                console.error('[NETWORK] Reconnection failed:', error);
+            });
+            return;
         }
+
+        // Ensure message has a senderId
+        data.senderId = data.senderId || this.localPlayerId;
+        
+        try {
+            console.log('[NETWORK] Sending message:', data);
+            this.ws.send(JSON.stringify(data));
+        } catch (error) {
+            console.error('[NETWORK] Error sending message:', error);
+            // Try to reconnect on send error
+            this.connect().catch(error => {
+                console.error('[NETWORK] Reconnection failed:', error);
+            });
+        }
+    }
+
+    attemptReconnect() {
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            console.error('[NETWORK] Max reconnection attempts reached');
+            return;
+        }
+
+        console.log(`[NETWORK] Attempting to reconnect (${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
+        setTimeout(() => {
+            this.reconnectAttempts++;
+            this.connect().catch(error => {
+                console.error('[NETWORK] Reconnection attempt failed:', error);
+                // Exponential backoff
+                this.reconnectDelay = Math.min(this.reconnectDelay * 2, 10000);
+            });
+        }, this.reconnectDelay);
     }
 }

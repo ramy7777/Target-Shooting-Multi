@@ -60,6 +60,14 @@ export class Engine {
         this.bulletManager = new BulletManager(this);
         this.birdManager = new BirdManager(this);
         this.networkManager = new NetworkManager(this);
+        
+        // Initialize network connection
+        this.networkManager.connect().then(() => {
+            console.log('[ENGINE] Successfully connected to server');
+        }).catch(error => {
+            console.error('[ENGINE] Failed to connect to server:', error);
+        });
+        
         this.scoreManager = new ScoreManager(this);
         this.uiManager = new UIManager(this);
         this.playerManager = new PlayerManager(this);
@@ -135,7 +143,6 @@ export class Engine {
         this.bulletManager.update(delta);
         this.birdManager.update(delta);
         this.uiManager.update();
-        this.uiManager.updateTimer();
         this.scoreManager.update(delta);
         this.world.update();
         this.particleManager.update();

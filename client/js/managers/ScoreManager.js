@@ -8,7 +8,16 @@ class ScoreManager {
         
         // Create both 2D and VR UIs
         this.createScoreUI();
-        this.vrScoreUI = new VRScoreUI(engine);
+        this.initVRScoreUI();
+    }
+
+    async initVRScoreUI() {
+        try {
+            this.vrScoreUI = new VRScoreUI(this.engine);
+            console.log('[SCORE] VRScoreUI initialized');
+        } catch (error) {
+            console.error('[SCORE] Failed to initialize VRScoreUI:', error);
+        }
     }
 
     createScoreUI() {

@@ -42,6 +42,7 @@ export class VRScoreUI {
     async loadFont() {
         const loader = new FontLoader();
         try {
+            console.log('[UI] Loading font...');
             this.font = await new Promise((resolve, reject) => {
                 loader.load('https://threejs.org/examples/fonts/optimer_bold.typeface.json', 
                     resolve, 
@@ -49,13 +50,17 @@ export class VRScoreUI {
                     reject
                 );
             });
-            this.initializeUI();
+            console.log('[UI] Font loaded successfully');
+            await this.initializeUI();
+            console.log('[UI] UI initialized');
         } catch (error) {
-            console.error('Failed to load font:', error);
+            console.error('[UI] Failed to load font:', error);
         }
     }
 
-    initializeUI() {
+    async initializeUI() {
+        console.log('[UI] Starting UI initialization');
+        
         // Position the score panel on the left wall
         const roomWidth = 40; // Match the room dimensions from World.js
         this.scoreGroup.position.set(-roomWidth/2 + 0.1, 4, 0); // Slightly off the wall
@@ -164,6 +169,10 @@ export class VRScoreUI {
         glowPanel.position.z = -0.03;
         this.scoreGroup.add(glowPanel);
 
+        // Create timer display first
+        await this.createTimerDisplay();
+        console.log('[UI] Timer display created');
+
         // Add title with enhanced styling
         if (this.font) {
             const titleGeometry = new TextGeometry('LEADERBOARD', {
@@ -205,15 +214,14 @@ export class VRScoreUI {
             this.scoreGroup.add(underline);
         }
 
-        // Create timer display
-        this.createTimerDisplay();
-
         // Create start button
-        this.createStartButton();
+        await this.createStartButton();
+        console.log('[UI] Start button created');
 
         // Add to scene
         this.engine.scene.add(this.scoreGroup);
         this.engine.scene.add(this.playerTagsGroup);
+        console.log('[UI] Added UI elements to scene');
         
         // Start animation loop for glow effect
         const animate = () => {
@@ -223,6 +231,48 @@ export class VRScoreUI {
             requestAnimationFrame(animate);
         };
         animate();
+    }
+
+    async createTimerDisplay() {
+        console.log('[UI] Creating timer display');
+        // Create canvas for timer with higher resolution
+        const canvas = document.createElement('canvas');
+        canvas.width = 1024; // Increased for better text quality
+        canvas.height = 512;
+        
+        // Initialize canvas with empty timer
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#00ffff';
+        context.font = 'bold 192px Arial'; // Larger font size
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText('2:00', canvas.width/2, canvas.height/2);
+        
+        // Create texture from canvas
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        const material = new THREE.MeshBasicMaterial({ 
+            map: texture,
+            transparent: true,
+            side: THREE.DoubleSide
+        });
+        
+        // Create mesh for timer display
+        const geometry = new THREE.PlaneGeometry(2, 1);
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(0, -2.8, 0.01); // Position at bottom of panel
+        this.scoreGroup.add(mesh);
+        
+        // Store timer display properties
+        this.timerMesh = {
+            mesh: mesh,
+            texture: texture,
+            context: context,
+            canvas: canvas
+        };
+        
+        console.log('[UI] Timer display initialized');
     }
 
     createGradientTexture() {
@@ -243,35 +293,7 @@ export class VRScoreUI {
         return texture;
     }
 
-    createTimerDisplay() {
-        // Create canvas for timer
-        const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 128;
-        
-        // Create texture from canvas
-        const texture = new THREE.CanvasTexture(canvas);
-        const material = new THREE.MeshBasicMaterial({ 
-            map: texture,
-            transparent: true,
-            side: THREE.DoubleSide
-        });
-        
-        // Create mesh for timer display
-        const geometry = new THREE.PlaneGeometry(1.5, 0.75);
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.set(0, -2.8, 0.01); // Position at bottom of panel, below start button
-        this.scoreGroup.add(mesh);
-        
-        // Store timer display properties
-        this.timerMesh = {
-            mesh: mesh,
-            texture: texture,
-            context: canvas.getContext('2d')
-        };
-    }
-
-    createStartButton() {
+    async createStartButton() {
         // Create button base geometry with rounded edges
         const geometry = new THREE.BoxGeometry(1.4, 0.7, 0.15);
         geometry.translate(0, 0, 0.075); // Move pivot to back face
@@ -508,48 +530,7 @@ export class VRScoreUI {
         });
     }
 
-    updateTimer() {
-        if (!this.timerMesh || !this.engine.uiManager.gameStarted) return;
-        
-        const currentTime = Date.now();
-        const elapsedTime = currentTime - this.engine.uiManager.gameStartTime;
-        const remainingTime = Math.max(0, this.engine.uiManager.gameDuration - elapsedTime);
-        
-        // Convert to seconds and format
-        const seconds = Math.ceil(remainingTime / 1000);
-        const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = seconds % 60;
-        const timeText = `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-        
-        // Update canvas
-        const context = this.timerMesh.context;
-        context.clearRect(0, 0, context.canvas.width, context.canvas.height);
-        
-        // Add text shadow for outline effect
-        context.shadowColor = 'black';
-        context.shadowBlur = 4;
-        context.shadowOffsetX = 2;
-        context.shadowOffsetY = 2;
-        
-        context.fillStyle = '#00ffff'; // Cyan color to match player text
-        context.font = 'bold 96px optimer'; // Using the same font family
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.fillText(timeText, context.canvas.width/2, context.canvas.height/2);
-        
-        // Reset shadow for clean rendering
-        context.shadowColor = 'transparent';
-        context.shadowBlur = 0;
-        context.shadowOffsetX = 0;
-        context.shadowOffsetY = 0;
-        
-        // Update texture
-        this.timerMesh.texture.needsUpdate = true;
-    }
-
     update() {
-        this.updateTimer();
-
         // Check for start button interaction
         if (this.startButton && !this.engine.uiManager.gameStarted) {
             const session = this.engine.renderer.xr.getSession();
@@ -623,5 +604,42 @@ export class VRScoreUI {
                 }
             }
         }
+    }
+
+    updateTimer(timeText) {
+        if (!this.timerMesh || !this.timerMesh.context) {
+            console.warn('[UI] Timer mesh or context not initialized');
+            return;
+        }
+        
+        const context = this.timerMesh.context;
+        const canvas = this.timerMesh.canvas;
+        
+        // Clear the canvas
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw new time with larger, clearer text
+        context.fillStyle = '#00ffff';
+        context.font = 'bold 192px Arial'; // Larger font size
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        
+        // Add shadow for better visibility
+        context.shadowColor = 'rgba(0, 255, 255, 0.5)';
+        context.shadowBlur = 30;
+        context.shadowOffsetX = 0;
+        context.shadowOffsetY = 0;
+        
+        // Draw the time text
+        context.fillText(timeText, canvas.width/2, canvas.height/2);
+        
+        // Reset shadow
+        context.shadowColor = 'transparent';
+        context.shadowBlur = 0;
+        
+        // Update the texture
+        this.timerMesh.texture.needsUpdate = true;
+        
+        console.log('[UI] Timer updated to:', timeText);
     }
 }
