@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 export class Bullet extends THREE.Object3D {
-    constructor(position, direction, speed = 0.3, lifespan = 2000) {
+    constructor(position, direction, shooterId, speed = 0.3, lifespan = 2000) {
         super();
         
         // Create bullet mesh
@@ -19,9 +19,11 @@ export class Bullet extends THREE.Object3D {
         this.position.copy(position);
         this.previousPosition = position.clone(); // Store previous position
         this.direction = direction.clone().normalize(); // Clone and normalize direction
+        this.velocity = this.direction.clone().multiplyScalar(0.2); // Store velocity for collision detection
         this.speed = speed;
         this.creationTime = Date.now();
         this.lifespan = lifespan;
+        this.shooterId = shooterId;
 
         // Set bullet orientation to match direction
         const quaternion = new THREE.Quaternion();
@@ -30,13 +32,16 @@ export class Bullet extends THREE.Object3D {
         this.setRotationFromQuaternion(quaternion);
     }
 
-    update() {
-        // Store previous position before moving
+    update(deltaTime) {
+        // Update previous position for collision detection
         this.previousPosition.copy(this.position);
         
-        // Move bullet along its direction
+        // Move bullet
         const movement = this.direction.clone().multiplyScalar(this.speed);
         this.position.add(movement);
+        
+        // Update velocity for collision detection
+        this.velocity.copy(movement);
         
         // Check if bullet should be destroyed
         const age = Date.now() - this.creationTime;

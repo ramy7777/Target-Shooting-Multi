@@ -5,7 +5,7 @@ export class Bird extends THREE.Object3D {
         super();
         
         // Create a smaller green sphere (70% smaller)
-        const geometry = new THREE.SphereGeometry(0.15, 16, 16);
+        const geometry = new THREE.SphereGeometry(0.075, 32, 32);
         const material = new THREE.MeshStandardMaterial({ 
             color: 0x00ff00,
             metalness: 0.5,

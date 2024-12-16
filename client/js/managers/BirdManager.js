@@ -10,14 +10,20 @@ export class BirdManager {
         this.maxBirds = 6; // Maximum number of birds allowed
         this.isSpawning = false;
 
-        // Boundary for spawning birds (match holographic room)
+        // Adjust spawn boundaries to be within room
+        const spawnBoundaries = {
+            x: { min: -2, max: 2 },
+            y: { min: 0.5, max: 2 },
+            z: { min: -2, max: 2 }
+        };
+
         this.spawnBoundary = {
-            minX: -2,    // Half of roomWidth (5/2)
-            maxX: 2,
-            minY: 1,     // roomY (2) - 1 meter
-            maxY: 4,     // roomY (2) + roomHeight (3) - 1 meter
-            minZ: -1.5,  // Half of roomDepth (3/2)
-            maxZ: 1.5
+            minX: spawnBoundaries.x.min,    // Half of roomWidth (5/2)
+            maxX: spawnBoundaries.x.max,
+            minY: spawnBoundaries.y.min,     // roomY (2) - 1 meter
+            maxY: spawnBoundaries.y.max,     // roomY (2) + roomHeight (3) - 1 meter
+            minZ: spawnBoundaries.z.min,  // Half of roomDepth (3/2)
+            maxZ: spawnBoundaries.z.max
         };
     }
 
@@ -94,14 +100,21 @@ export class BirdManager {
 
     handleBulletCollision(bullet) {
         // Check collision with each bird
-        for (const [id, bird] of this.birds) {
-            const birdBoundingSphere = new THREE.Sphere(bird.position, 0.15); // Reduced from 0.5 to 0.15 to match visual size
-            const bulletBoundingSphere = new THREE.Sphere(bullet.position, 0.03); // Reduced from 0.05 to 0.03 for more precise hits
+        const bulletVelocity = bullet.velocity.clone();
+        const bulletPath = new THREE.Line3(
+            bullet.position.clone().sub(bulletVelocity), // Previous position
+            bullet.position.clone() // Current position
+        );
 
-            if (birdBoundingSphere.intersectsSphere(bulletBoundingSphere)) {
+        for (const [id, bird] of this.birds) {
+            const birdSphere = new THREE.Sphere(bird.position, 0.075);
+            
+            // Check if bullet's path intersects with the sphere
+            const intersection = this.checkBulletSpherePath(bulletPath, birdSphere);
+            
+            if (intersection) {
                 // Remove the bird
                 this.removeBird(id);
-
                 // Update score immediately for both host and client
                 this.engine.scoreManager.updateScore(bullet.shooterId, 10);
 
@@ -118,7 +131,32 @@ export class BirdManager {
                 return true; // Collision detected
             }
         }
-        return false; // No collision
+        return false;
+    }
+
+    checkBulletSpherePath(bulletPath, sphere) {
+        // Get the closest point on the line to the sphere center
+        const closestPoint = new THREE.Vector3();
+        bulletPath.closestPointToPoint(sphere.center, true, closestPoint);
+
+        // Check if the closest point is within the line segment and sphere
+        if (closestPoint.distanceTo(sphere.center) <= sphere.radius) {
+            // Check if the point is actually on our line segment
+            const lineStart = bulletPath.start;
+            const lineEnd = bulletPath.end;
+            
+            // Calculate the projection onto the line
+            const lineDirection = lineEnd.clone().sub(lineStart).normalize();
+            const pointToStart = closestPoint.clone().sub(lineStart);
+            const dotProduct = pointToStart.dot(lineDirection);
+            
+            // Check if the point lies between start and end
+            const lineLength = lineStart.distanceTo(lineEnd);
+            if (dotProduct >= 0 && dotProduct <= lineLength) {
+                return true;
+            }
+        }
+        return false;
     }
 
     handleNetworkBirdSpawn(data) {
