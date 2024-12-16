@@ -6,11 +6,37 @@ export class VRScoreUI {
     constructor(engine) {
         this.engine = engine;
         this.scoreGroup = new THREE.Group();
+        this.playerTagsGroup = new THREE.Group();
         this.font = null;
-        this.textMeshes = new Map(); // playerId -> { text: mesh }
+        this.textMeshes = new Map();
+        this.playerTagMeshes = new Map();
         this.timerMesh = null;
         this.startButton = null;
         this.loadFont();
+
+        // Start the update loop for player tags position
+        this.updatePlayerTagsPosition();
+    }
+
+    updatePlayerTagsPosition() {
+        const updatePosition = () => {
+            if (this.engine.playerManager && this.engine.playerManager.localPlayer) {
+                const player = this.engine.playerManager.localPlayer;
+                const playerPosition = player.position;
+                
+                // Position the tags group relative to player
+                this.playerTagsGroup.position.set(
+                    playerPosition.x,         // Aligned with player
+                    playerPosition.y + 2.5,   // 2.5 units above eye level (moved down by 1)
+                    playerPosition.z - 3      // 3 units back
+                );
+
+                // Rotate 90 degrees around Y axis to face sideways
+                this.playerTagsGroup.rotation.set(0, 0, 0); // No rotation to face forward
+            }
+            requestAnimationFrame(updatePosition);
+        };
+        updatePosition();
     }
 
     async loadFont() {
@@ -34,6 +60,18 @@ export class VRScoreUI {
         const roomWidth = 40; // Match the room dimensions from World.js
         this.scoreGroup.position.set(-roomWidth/2 + 0.1, 4, 0); // Slightly off the wall
         this.scoreGroup.rotation.y = Math.PI/2; // Rotate to face into the room
+
+        // Player tags panel setup - make it taller and narrower
+        const tagsBackgroundGeometry = new THREE.PlaneGeometry(1, 2.5);
+        const tagsBackgroundMaterial = new THREE.MeshBasicMaterial({
+            color: 0x1a1a1a,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide
+        });
+        const tagsBackground = new THREE.Mesh(tagsBackgroundGeometry, tagsBackgroundMaterial);
+        tagsBackground.position.z = -0.01;
+        this.playerTagsGroup.add(tagsBackground);
 
         // Add main background panel with gradient effect
         const mainPanelGeometry = new THREE.PlaneGeometry(4, 6);
@@ -175,6 +213,7 @@ export class VRScoreUI {
 
         // Add to scene
         this.engine.scene.add(this.scoreGroup);
+        this.engine.scene.add(this.playerTagsGroup);
         
         // Start animation loop for glow effect
         const animate = () => {
@@ -294,7 +333,7 @@ export class VRScoreUI {
     updatePlayerScore(playerId, score, rank) {
         if (!this.font) return;
 
-        // Remove existing score display if any
+        // Update main leaderboard
         if (this.textMeshes.has(playerId)) {
             const display = this.textMeshes.get(playerId);
             this.scoreGroup.remove(display.text);
@@ -303,17 +342,27 @@ export class VRScoreUI {
             this.textMeshes.delete(playerId);
         }
 
-        // Calculate vertical position
+        // Update player tag
+        if (this.playerTagMeshes.has(playerId)) {
+            const display = this.playerTagMeshes.get(playerId);
+            this.playerTagsGroup.remove(display.text);
+            display.text.geometry.dispose();
+            display.text.material.dispose();
+            this.playerTagMeshes.delete(playerId);
+        }
+
+        // Calculate vertical positions
         const startY = 1.8;
         const spacing = 0.45;
-        const yPosition = startY - (rank * spacing);
+        const tagYPosition = 0.8 - (rank * 0.2); // More compact spacing for floating panel
 
         // Create text content
         const isLocalPlayer = playerId === this.engine.playerManager.localPlayer.id;
         const playerText = isLocalPlayer ? 'You' : `Player ${playerId}`;
         const scoreText = `${rank + 1}. ${playerText}: ${score}`;
+        const tagText = `${rank + 1}. ${playerText}: ${score}`; // Include score in tag
 
-        // Create text geometry with clean settings
+        // Create main leaderboard text
         const textGeometry = new TextGeometry(scoreText, {
             font: this.font,
             size: 0.225,
@@ -322,49 +371,82 @@ export class VRScoreUI {
             bevelEnabled: false
         });
 
-        // Simple material for maximum sharpness
         const textMaterial = new THREE.MeshBasicMaterial({ 
             color: isLocalPlayer ? 0x00ffff : 0xffffff
         });
 
         const textMesh = new THREE.Mesh(textGeometry, textMaterial);
         
-        // Center the text
+        // Center and position main text
         textGeometry.computeBoundingBox();
         const centerOffset = -(textGeometry.boundingBox.max.x - textGeometry.boundingBox.min.x) / 2;
-        
-        // Position the text
-        textMesh.position.set(centerOffset, yPosition, 0.02);
-        
-        // Add to scene
+        textMesh.position.set(centerOffset, startY - (rank * spacing), 0.02);
         this.scoreGroup.add(textMesh);
-
-        // Store references
         this.textMeshes.set(playerId, { text: textMesh });
+
+        // Create player tag text (smaller and includes score)
+        const tagGeometry = new TextGeometry(tagText, {
+            font: this.font,
+            size: 0.1, // Even smaller for floating panel
+            height: 0,
+            curveSegments: 4,
+            bevelEnabled: false
+        });
+
+        const tagMaterial = new THREE.MeshBasicMaterial({ 
+            color: isLocalPlayer ? 0x00ffff : 0xffffff
+        });
+
+        const tagMesh = new THREE.Mesh(tagGeometry, tagMaterial);
+        
+        // Center and position tag text
+        tagGeometry.computeBoundingBox();
+        const tagCenterOffset = -(tagGeometry.boundingBox.max.x - tagGeometry.boundingBox.min.x) / 2;
+        tagMesh.position.set(tagCenterOffset, tagYPosition, 0.02);
+        this.playerTagsGroup.add(tagMesh);
+        this.playerTagMeshes.set(playerId, { text: tagMesh });
     }
 
     removePlayer(playerId) {
+        // Remove from main leaderboard
         if (this.textMeshes.has(playerId)) {
             const display = this.textMeshes.get(playerId);
             this.scoreGroup.remove(display.text);
             display.text.geometry.dispose();
             display.text.material.dispose();
             this.textMeshes.delete(playerId);
-            
-            // Reposition remaining scores
-            this.repositionScores();
         }
+
+        // Remove from player tags
+        if (this.playerTagMeshes.has(playerId)) {
+            const display = this.playerTagMeshes.get(playerId);
+            this.playerTagsGroup.remove(display.text);
+            display.text.geometry.dispose();
+            display.text.material.dispose();
+            this.playerTagMeshes.delete(playerId);
+        }
+        
+        // Reposition remaining scores
+        this.repositionScores();
     }
 
     repositionScores() {
         const startY = 1.8;
         const spacing = 0.45;
+        const tagStartY = 0.8;
+        const tagSpacing = 0.2;
         
         const players = Array.from(this.textMeshes.keys());
         players.forEach((playerId, index) => {
+            // Reposition main leaderboard text
             const display = this.textMeshes.get(playerId);
             const yPosition = startY - (index * spacing);
             display.text.position.y = yPosition;
+
+            // Reposition player tag text
+            const tagDisplay = this.playerTagMeshes.get(playerId);
+            const tagYPosition = tagStartY - (index * tagSpacing);
+            tagDisplay.text.position.y = tagYPosition;
         });
     }
 
