@@ -5,11 +5,11 @@ export class Bullet extends THREE.Object3D {
         super();
         
         // Create bullet mesh
-        const geometry = new THREE.SphereGeometry(0.5, 16, 16);
+        const geometry = new THREE.SphereGeometry(0.167, 16, 16);
         const material = new THREE.MeshPhongMaterial({
-            color: 0xff0000,
-            emissive: 0xff0000,
-            emissiveIntensity: 0.5,
+            color: 0x0044ff,
+            emissive: 0x0044ff,
+            emissiveIntensity: 0.8,
             shininess: 100
         });
         this.bulletMesh = new THREE.Mesh(geometry, material);
