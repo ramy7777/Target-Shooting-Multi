@@ -136,7 +136,7 @@ export class World {
             // Set scene background and environment
             this.engine.scene.background = scaledTexture;
             this.engine.scene.environment = envMap.texture;
-            this.engine.scene.environment.intensity = 1.5; // Increased from default
+            this.engine.scene.environment.intensity = 3.0; // Doubled from 1.5
             
             // Change to ReinhardToneMapping with very low exposure
             this.engine.renderer.toneMapping = THREE.ReinhardToneMapping;

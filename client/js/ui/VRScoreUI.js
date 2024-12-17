@@ -235,42 +235,31 @@ export class VRScoreUI {
 
     async createTimerDisplay() {
         console.log('[UI] Creating timer display');
-        // Create canvas for timer with higher resolution
-        const canvas = document.createElement('canvas');
-        canvas.width = 1024; // Increased for better text quality
-        canvas.height = 512;
-        
-        // Initialize canvas with empty timer
-        const context = canvas.getContext('2d');
-        context.fillStyle = '#00ffff';
-        context.font = 'bold 192px Arial'; // Larger font size
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.fillText('2:00', canvas.width/2, canvas.height/2);
-        
-        // Create texture from canvas
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-        const material = new THREE.MeshBasicMaterial({ 
-            map: texture,
-            transparent: true,
-            side: THREE.DoubleSide
+        // Create timer text
+        const timerGeometry = new TextGeometry('2:00', {
+            font: this.font,
+            size: 0.3,
+            height: 0.03,
+            curveSegments: 4,
+            bevelEnabled: false
         });
-        
-        // Create mesh for timer display
-        const geometry = new THREE.PlaneGeometry(2, 1);
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.set(0, -2.8, 0.01); // Position at bottom of panel
-        this.scoreGroup.add(mesh);
-        
-        // Store timer display properties
-        this.timerMesh = {
-            mesh: mesh,
-            texture: texture,
-            context: context,
-            canvas: canvas
-        };
+
+        const timerMaterial = new THREE.MeshStandardMaterial({
+            color: 0x00ffff,
+            emissive: 0x00ffff,
+            emissiveIntensity: 20.0,
+            metalness: 0,
+            roughness: 0,
+            transparent: true,
+            opacity: 1.0
+        });
+
+        const timerMesh = new THREE.Mesh(timerGeometry, timerMaterial);
+        timerGeometry.computeBoundingBox();
+        const centerOffset = -(timerGeometry.boundingBox.max.x - timerGeometry.boundingBox.min.x) / 2;
+        timerMesh.position.set(centerOffset, -2.8, 0.01);
+        this.scoreGroup.add(timerMesh);
+        this.timerMesh = timerMesh;
         
         console.log('[UI] Timer display initialized');
     }
@@ -454,9 +443,11 @@ export class VRScoreUI {
         const textMaterial = new THREE.MeshStandardMaterial({ 
             color: isLocalPlayer ? 0x00ffff : 0xffffff,
             emissive: isLocalPlayer ? 0x00ffff : 0xffffff,
-            emissiveIntensity: 2.0,
+            emissiveIntensity: 20.0, // Dramatically increased for maximum visibility
             metalness: 0,
-            roughness: 0.2
+            roughness: 0,  // Reduced roughness for more shine
+            transparent: true,
+            opacity: 1.0
         });
 
         const textMesh = new THREE.Mesh(textGeometry, textMaterial);
@@ -480,9 +471,11 @@ export class VRScoreUI {
         const tagMaterial = new THREE.MeshStandardMaterial({ 
             color: isLocalPlayer ? 0x00ffff : 0xffffff,
             emissive: isLocalPlayer ? 0x00ffff : 0xffffff,
-            emissiveIntensity: 2.0,
+            emissiveIntensity: 20.0, // Dramatically increased for maximum visibility
             metalness: 0,
-            roughness: 0.2
+            roughness: 0,  // Reduced roughness for more shine
+            transparent: true,
+            opacity: 1.0
         });
 
         const tagMesh = new THREE.Mesh(tagGeometry, tagMaterial);
@@ -615,38 +608,48 @@ export class VRScoreUI {
     }
 
     updateTimer(timeText) {
-        if (!this.timerMesh || !this.timerMesh.context) {
-            console.warn('[UI] Timer mesh or context not initialized');
+        if (!this.timerMesh) {
+            console.warn('[UI] Timer mesh not initialized');
             return;
         }
         
-        const context = this.timerMesh.context;
-        const canvas = this.timerMesh.canvas;
-        
-        // Clear the canvas
-        context.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // Draw new time with larger, clearer text
-        context.fillStyle = '#00ffff';
-        context.font = 'bold 192px Arial'; // Larger font size
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        
-        // Add shadow for better visibility
-        context.shadowColor = 'rgba(0, 255, 255, 0.5)';
-        context.shadowBlur = 30;
-        context.shadowOffsetX = 0;
-        context.shadowOffsetY = 0;
-        
-        // Draw the time text
-        context.fillText(timeText, canvas.width/2, canvas.height/2);
-        
-        // Reset shadow
-        context.shadowColor = 'transparent';
-        context.shadowBlur = 0;
-        
-        // Update the texture
-        this.timerMesh.texture.needsUpdate = true;
+        // Create timer text
+        const timerGeometry = new TextGeometry(timeText, {
+            font: this.font,
+            size: 0.3,
+            height: 0.03,
+            curveSegments: 4,
+            bevelEnabled: false
+        });
+
+        const timerMaterial = new THREE.MeshStandardMaterial({
+            color: 0x00ffff,
+            emissive: 0x00ffff,
+            emissiveIntensity: 20.0,
+            metalness: 0,
+            roughness: 0,
+            transparent: true,
+            opacity: 1.0
+        });
+
+        // Update timer mesh
+        if (this.timerMesh.geometry) {
+            this.timerMesh.geometry.dispose();
+            this.timerMesh.geometry = timerGeometry;
+        } else {
+            this.timerMesh.geometry = timerGeometry;
+        }
+        if (this.timerMesh.material) {
+            this.timerMesh.material.dispose();
+            this.timerMesh.material = timerMaterial;
+        } else {
+            this.timerMesh.material = timerMaterial;
+        }
+
+        // Position timer
+        timerGeometry.computeBoundingBox();
+        const centerOffset = -(timerGeometry.boundingBox.max.x - timerGeometry.boundingBox.min.x) / 2;
+        this.timerMesh.position.set(centerOffset, -2.8, 0.01);
         
         console.log('[UI] Timer updated to:', timeText);
     }
