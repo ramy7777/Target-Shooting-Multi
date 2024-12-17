@@ -9,7 +9,7 @@ export class Bird extends THREE.Object3D {
         const material = new THREE.ShaderMaterial({
             uniforms: {
                 time: { value: 0 },
-                color: { value: new THREE.Color(0x00ff44) }
+                color: { value: new THREE.Color(0x00bb33) }
             },
             vertexShader: `
                 varying vec2 vUv;
@@ -80,13 +80,13 @@ export class Bird extends THREE.Object3D {
                     rim = smoothstep(0.3, 1.0, rim);
                     
                     // Higher base visibility
-                    float baseVisibility = 0.5;
+                    float baseVisibility = 0.35;
                     
                     // Calculate final alpha with more stability
-                    float alpha = (pattern * pulse * 0.4 + rim * 0.3 + baseVisibility) * 0.9;
+                    float alpha = (pattern * pulse * 0.3 + rim * 0.2 + baseVisibility) * 0.6;
                     
                     // Enhanced glow color with better balance
-                    vec3 glowColor = color + vec3(0.2) * pattern + vec3(0.3) * rim;
+                    vec3 glowColor = color + vec3(0.15) * pattern + vec3(0.2) * rim;
                     gl_FragColor = vec4(glowColor, alpha);
                 }
             `,
