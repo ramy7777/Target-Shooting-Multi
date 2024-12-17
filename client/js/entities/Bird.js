@@ -74,26 +74,34 @@ export class Bird extends THREE.Object3D {
                     // Subtle pulse effect
                     float pulse = sin(time * 1.5) * 0.05 + 0.95;
                     
-                    // Improved rim lighting
+                    // Improved rim lighting with angle-independent component
                     vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
                     float rim = pow(1.0 - max(dot(viewDirection, vNormal), 0.0), 2.0);
                     rim = smoothstep(0.3, 1.0, rim);
                     
-                    // Higher base visibility
-                    float baseVisibility = 0.35;
+                    // Ensure minimum visibility regardless of angle
+                    float viewAngle = abs(dot(viewDirection, vNormal));
+                    float angleVisibility = max(0.7, viewAngle); // Minimum 0.7 visibility
                     
-                    // Calculate final alpha with more stability
-                    float alpha = (pattern * pulse * 0.3 + rim * 0.2 + baseVisibility) * 0.6;
+                    // Higher base visibility with guaranteed minimum
+                    float baseVisibility = max(0.4, 0.35 * (1.0 + (1.0 - viewAngle) * 0.8));
                     
-                    // Enhanced glow color with better balance
-                    vec3 glowColor = color + vec3(0.15) * pattern + vec3(0.2) * rim;
+                    // Calculate final alpha with guaranteed minimum visibility
+                    float alpha = max(0.3, (pattern * pulse * 0.3 + rim * 0.2 + baseVisibility) * 0.6 * angleVisibility);
+                    
+                    // Enhanced glow color with stronger base emission
+                    vec3 glowColor = color * 1.2 + vec3(0.15) * pattern + vec3(0.2) * rim + vec3(0.15);
                     gl_FragColor = vec4(glowColor, alpha);
                 }
             `,
             transparent: true,
             side: THREE.DoubleSide,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending
+            depthWrite: true,
+            depthTest: true,
+            blending: THREE.CustomBlending,
+            blendEquation: THREE.AddEquation,
+            blendSrc: THREE.SrcAlphaFactor,
+            blendDst: THREE.OneMinusSrcAlphaFactor
         });
 
         this.mesh = new THREE.Mesh(geometry, material);
