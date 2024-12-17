@@ -201,6 +201,25 @@ export class NetworkManager {
                 }
                 break;
 
+            case 'birdHitAttempt':
+                if (this.isHost) {
+                    // Host validates the hit attempt
+                    const bird = this.engine.birdManager.birds.get(data.data.birdId);
+                    if (bird) {
+                        // Bird exists, validate the hit
+                        this.send({
+                            type: 'birdHit',
+                            data: {
+                                birdId: data.data.birdId,
+                                bulletShooterId: data.senderId,
+                                position: data.data.position,
+                                points: 10
+                            }
+                        });
+                    }
+                }
+                break;
+
             case 'birdHit':
                 if (this.engine.birdManager) {
                     this.engine.birdManager.handleNetworkBirdHit(data.data);

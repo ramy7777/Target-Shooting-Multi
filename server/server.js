@@ -42,12 +42,12 @@ const wss = new WebSocket.Server({ server });
 
 // Store rooms and clients
 const rooms = new Map(); // roomCode -> Set of clients
-const clients = new Map(); // ws -> { id, roomCode }
+const clients = new Map(); // ws -> { id, roomCode, isHost }
 let nextClientId = 1;
 
 wss.on('connection', (ws) => {
     const clientId = nextClientId++;
-    clients.set(ws, { id: clientId, roomCode: null });
+    clients.set(ws, { id: clientId, roomCode: null, isHost: false });
     console.log(`Client ${clientId} connected`);
 
     // Send client their ID
@@ -99,18 +99,42 @@ wss.on('connection', (ws) => {
                     }, ws);
                     break;
 
-                case 'timerSync':
-                    // Forward timer sync to all clients in the room except sender
-                    broadcastToRoom(client.roomCode, {
-                        type: 'timerSync',
-                        senderId: client.id,
-                        data: data.data
-                    }, ws);
+                case 'birdHitAttempt':
+                    // Only process hit attempts if they come from a client
+                    const room = rooms.get(client.roomCode);
+                    if (room) {
+                        // Find the host of the room
+                        const host = Array.from(room).find(clientWs => {
+                            const clientData = clients.get(clientWs);
+                            return clientData && clientData.isHost;
+                        });
+
+                        if (host) {
+                            // Forward the hit attempt to the host for validation
+                            host.send(JSON.stringify({
+                                type: 'birdHitAttempt',
+                                senderId: client.id,
+                                data: data.data
+                            }));
+                        }
+                    }
                     break;
 
-                case 'birdKilled':
+                case 'birdHit':
+                    // Only process confirmed hits from the host
+                    const clientData = clients.get(ws);
+                    if (clientData && clientData.isHost) {
+                        broadcastToRoom(client.roomCode, {
+                            type: 'birdHit',
+                            senderId: client.id,
+                            data: data.data
+                        }, null); // Send to all clients including sender
+                    }
+                    break;
+
+                case 'birdRemoved':
                     broadcastToRoom(client.roomCode, {
-                        type: 'birdKilled',
+                        type: 'birdRemoved',
                         senderId: client.id,
                         data: data.data
                     }, ws);
@@ -127,6 +151,23 @@ wss.on('connection', (ws) => {
                 case 'sphereRemoved':
                     broadcastToRoom(client.roomCode, {
                         type: 'sphereRemoved',
+                        senderId: client.id,
+                        data: data.data
+                    }, ws);
+                    break;
+
+                case 'timerSync':
+                    // Forward timer sync to all clients in the room except sender
+                    broadcastToRoom(client.roomCode, {
+                        type: 'timerSync',
+                        senderId: client.id,
+                        data: data.data
+                    }, ws);
+                    break;
+
+                case 'birdKilled':
+                    broadcastToRoom(client.roomCode, {
+                        type: 'birdKilled',
                         senderId: client.id,
                         data: data.data
                     }, ws);
@@ -203,6 +244,7 @@ function handleHostSession(ws, client, roomCode) {
     if (!rooms.has(roomCode)) {
         rooms.set(roomCode, new Set([ws]));
         client.roomCode = roomCode;
+        client.isHost = true;
         console.log(`Room ${roomCode} created by client ${client.id}`);
         
         ws.send(JSON.stringify({

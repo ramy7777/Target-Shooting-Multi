@@ -129,9 +129,6 @@ export class BirdManager {
                 // Remove the bird
                 this.removeBird(id);
 
-                // Update score immediately for both host and client
-                this.engine.scoreManager.updateScore(bullet.shooterId, 10);
-
                 // Play destruction sound effect
                 if (this.engine.audioManager) {
                     this.engine.audioManager.playBirdDestruction();
@@ -154,10 +151,25 @@ export class BirdManager {
                     }
                 }
 
-                // If we're the host, send the hit event
-                if (this.engine.networkManager && this.engine.networkManager.isHost) {
+                // If we're the host, validate the hit and update scores
+                if (this.engine.networkManager?.isHost) {
+                    // Update score for the shooter
+                    this.engine.scoreManager.updateScore(bullet.shooterId, 10);
+                    
+                    // Broadcast the hit to all clients
                     this.engine.networkManager.send({
                         type: 'birdHit',
+                        data: {
+                            birdId: id,
+                            bulletShooterId: bullet.shooterId,
+                            position: explosionPosition.toArray(),
+                            points: 10
+                        }
+                    });
+                } else {
+                    // For clients, send hit attempt to host for validation
+                    this.engine.networkManager.send({
+                        type: 'birdHitAttempt',
                         data: {
                             birdId: id,
                             bulletShooterId: bullet.shooterId,
@@ -165,10 +177,36 @@ export class BirdManager {
                         }
                     });
                 }
+                
                 return true; // Collision detected
             }
         }
         return false;
+    }
+
+    handleNetworkBirdHit(data) {
+        const { birdId, bulletShooterId, position, points } = data;
+        
+        // Only update score if we're not the host (host already updated)
+        if (!this.engine.networkManager?.isHost) {
+            this.engine.scoreManager.updateScore(bulletShooterId, points);
+        }
+
+        // Remove the bird if it still exists
+        if (this.birds.has(birdId)) {
+            this.removeBird(birdId);
+            
+            // Create explosion effect
+            if (this.engine.particleManager) {
+                const explosionPos = new THREE.Vector3().fromArray(position);
+                this.engine.particleManager.createExplosion(explosionPos);
+            }
+
+            // Play sound
+            if (this.engine.audioManager) {
+                this.engine.audioManager.playBirdDestruction();
+            }
+        }
     }
 
     checkBulletSpherePath(bulletPath, sphere) {
@@ -217,31 +255,6 @@ export class BirdManager {
 
     handleNetworkBirdRemoved(data) {
         this.removeBird(data.id);
-    }
-
-    handleNetworkBirdHit(data) {
-        // Get the bird's position before removing it
-        const bird = this.birds.get(data.birdId);
-        const position = bird ? bird.position.clone() : new THREE.Vector3();
-
-        // Remove the bird that was hit
-        this.removeBird(data.birdId);
-        
-        // Play destruction sound effect
-        if (this.engine.audioManager) {
-            this.engine.audioManager.playBirdDestruction();
-        }
-
-        // Create particle explosion using the position from the network message
-        if (this.engine.particleManager) {
-            const explosionPosition = data.position ? new THREE.Vector3().fromArray(data.position) : position;
-            this.engine.particleManager.createExplosion(explosionPosition);
-        }
-        
-        // Update score for the shooter
-        if (data.bulletShooterId) {
-            this.engine.scoreManager.updateScore(data.bulletShooterId, 10);
-        }
     }
 
     handleBirdKilled(data) {
