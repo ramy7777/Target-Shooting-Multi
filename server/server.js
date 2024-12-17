@@ -99,6 +99,15 @@ wss.on('connection', (ws) => {
                     }, ws);
                     break;
 
+                case 'timerSync':
+                    // Forward timer sync to all clients in the room except sender
+                    broadcastToRoom(client.roomCode, {
+                        type: 'timerSync',
+                        senderId: client.id,
+                        data: data.data
+                    }, ws);
+                    break;
+
                 case 'birdKilled':
                     broadcastToRoom(client.roomCode, {
                         type: 'birdKilled',

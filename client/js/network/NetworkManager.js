@@ -210,10 +210,11 @@ export class NetworkManager {
             case 'gameStart':
                 if (!this.isHost) {
                     console.log('[NETWORK] Client received game start:', data);
-                    this.engine.uiManager.handleNetworkGameStart({
-                        startTime: data.startTime,
-                        duration: data.duration
-                    });
+                    if (!data.data || !data.data.startTime || !data.data.duration) {
+                        console.error('[NETWORK] Invalid game start data:', data);
+                        return;
+                    }
+                    this.engine.uiManager.handleNetworkGameStart(data.data);
                 }
                 break;
 
@@ -246,6 +247,22 @@ export class NetworkManager {
                 this.engine.voiceManager.handleVoiceStop(data.playerId);
                 break;
 
+            case 'timerSync':
+                if (!this.isHost) {
+                    // Only process timer syncs if game is fully initialized
+                    if (!this.engine.uiManager.gameStarted || !this.engine.uiManager.timerInterval) {
+                        console.log('[NETWORK] Ignoring timer sync - game not fully started');
+                        return;
+                    }
+                    if (!data.data || !data.data.gameTime) {
+                        console.log('[NETWORK] Invalid timer sync data');
+                        return;
+                    }
+                    console.log('[NETWORK] Processing timer sync - Game time:', data.data.gameTime, 's');
+                    this.engine.uiManager.handleTimerSync(data.data);
+                }
+                break;
+
             case 'error':
                 console.error('Server error:', data.message);
                 if (this.engine.sessionManager) {
@@ -264,23 +281,38 @@ export class NetworkManager {
             return;
         }
 
-        const startTime = Date.now();
-        const duration = 60000; // 60 seconds
-
-        console.log('[NETWORK] Host starting game at:', startTime);
-
-        // Send game start to all clients
-        this.send({
-            type: 'gameStart',
-            startTime: startTime,
-            duration: duration
-        });
-
+        console.log('[NETWORK] Host starting game...');
+        
+        // First, ensure any existing game state is cleaned up
+        this.engine.uiManager.stopTimer();
+        
         // Start game locally for host
-        this.engine.uiManager.handleNetworkGameStart({
-            startTime: startTime,
-            duration: duration
-        });
+        this.engine.uiManager.handleGameStart();
+
+        // Wait for game to be fully initialized
+        const checkInitialization = () => {
+            if (this.engine.uiManager.gameStarted && this.engine.uiManager.timerInterval) {
+                // Game is fully initialized, send start message to clients
+                const startData = {
+                    startTime: this.engine.uiManager.gameStartTime,
+                    duration: this.engine.uiManager.gameDuration
+                };
+                console.log('[NETWORK] Game initialized, sending start to clients:', startData);
+                this.send({
+                    type: 'gameStart',
+                    data: startData
+                });
+            } else if (this.engine.uiManager.gameStarted) {
+                // Game started but not fully initialized, wait a bit longer
+                console.log('[NETWORK] Waiting for game initialization...');
+                setTimeout(checkInitialization, 50);
+            } else {
+                console.error('[NETWORK] Game failed to start');
+            }
+        };
+
+        // Start checking initialization after a short delay
+        setTimeout(checkInitialization, 50);
     }
 
     async autoJoinRoom() {

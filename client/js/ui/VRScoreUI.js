@@ -101,102 +101,33 @@ export class VRScoreUI {
             side: THREE.DoubleSide
         });
         const border = new THREE.Mesh(borderGeometry, borderMaterial);
-        border.position.z = -0.015;
+        border.position.z = -0.03;
         this.scoreGroup.add(border);
 
-        // Add inner border
-        const innerBorderGeometry = new THREE.PlaneGeometry(4, 6);
-        const innerBorder = new THREE.Mesh(innerBorderGeometry, borderMaterial.clone());
-        innerBorder.position.z = -0.016;
-        this.scoreGroup.add(innerBorder);
-
-        // Create corner decorations
-        const cornerSize = 0.3;
-        const cornerGeometry = new THREE.PlaneGeometry(cornerSize, cornerSize);
-        const cornerMaterial = new THREE.MeshBasicMaterial({
-            color: 0x4099ff,
-            transparent: true,
-            opacity: 0.9,
-            side: THREE.DoubleSide
-        });
-
-        // Add corners
-        const cornerPositions = [
-            { x: -2.1, y: 3.1 },  // Top left
-            { x: 2.1, y: 3.1 },   // Top right
-            { x: -2.1, y: -3.1 }, // Bottom left
-            { x: 2.1, y: -3.1 }   // Bottom right
-        ];
-
-        cornerPositions.forEach((pos, index) => {
-            const corner = new THREE.Mesh(cornerGeometry, cornerMaterial);
-            corner.position.set(pos.x, pos.y, -0.014);
-            corner.rotation.z = (Math.PI / 4) + (Math.PI / 2 * index);
-            this.scoreGroup.add(corner);
-        });
-
-        // Add glow effect with pulsing animation
-        const glowGeometry = new THREE.PlaneGeometry(4.4, 6.4);
-        const glowMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                color: { value: new THREE.Color(0x4099ff) },
-                time: { value: 0 }
-            },
-            vertexShader: `
-                varying vec2 vUv;
-                void main() {
-                    vUv = uv;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-            `,
-            fragmentShader: `
-                uniform vec3 color;
-                uniform float time;
-                varying vec2 vUv;
-                void main() {
-                    float dist = length(vUv - vec2(0.5));
-                    float pulse = 0.3 + 0.1 * sin(time * 2.0);
-                    float edge = smoothstep(0.5, 0.4, dist);
-                    float border = smoothstep(0.48, 0.47, dist) * smoothstep(0.45, 0.46, dist);
-                    float alpha = (edge * pulse) + (border * 0.8);
-                    gl_FragColor = vec4(color, alpha);
-                }
-            `,
-            transparent: true,
-            side: THREE.DoubleSide
-        });
-        const glowPanel = new THREE.Mesh(glowGeometry, glowMaterial);
-        glowPanel.position.z = -0.03;
-        this.scoreGroup.add(glowPanel);
-
-        // Create timer display first
+        // Create timer display
         await this.createTimerDisplay();
         console.log('[UI] Timer display created');
 
-        // Add title with enhanced styling
+        // Create title text
         if (this.font) {
-            const titleGeometry = new TextGeometry('LEADERBOARD', {
+            const titleGeometry = new TextGeometry('SCORES', {
                 font: this.font,
-                size: 0.3,
-                height: 0.05,
+                size: 0.4,
+                height: 0,
                 curveSegments: 12,
-                bevelEnabled: true,
-                bevelThickness: 0.02,
-                bevelSize: 0.01,
-                bevelOffset: 0,
-                bevelSegments: 5
+                bevelEnabled: false
+            });
+
+            const titleMaterial = new THREE.MeshStandardMaterial({
+                color: 0x4099ff,
+                emissive: 0x4099ff,
+                emissiveIntensity: 0.5,
+                metalness: 0,
+                roughness: 0.2
             });
 
             titleGeometry.computeBoundingBox();
             const centerOffset = -(titleGeometry.boundingBox.max.x - titleGeometry.boundingBox.min.x) / 2;
-
-            const titleMaterial = new THREE.MeshStandardMaterial({
-                color: 0xffffff,
-                metalness: 0.8,
-                roughness: 0.2,
-                emissive: 0x4099ff,
-                emissiveIntensity: 0.3
-            });
 
             const titleMesh = new THREE.Mesh(titleGeometry, titleMaterial);
             titleMesh.position.set(centerOffset, 2.5, 0);
@@ -214,14 +145,36 @@ export class VRScoreUI {
             this.scoreGroup.add(underline);
         }
 
-        // Create start button
-        await this.createStartButton();
-        console.log('[UI] Start button created');
-
-        // Add to scene
+        // Add to scene first so UI is visible while waiting for network
         this.engine.scene.add(this.scoreGroup);
         this.engine.scene.add(this.playerTagsGroup);
         console.log('[UI] Added UI elements to scene');
+
+        // Wait for NetworkManager to be initialized and host status to be confirmed
+        await new Promise(resolve => {
+            const checkHostStatus = () => {
+                if (this.engine.networkManager && this.engine.networkManager.connected) {
+                    // If we're connected and have host status (true or false), we can proceed
+                    if (typeof this.engine.networkManager.isHost === 'boolean' && this.engine.networkManager.currentRoom) {
+                        console.log('[UI] Host status confirmed:', this.engine.networkManager.isHost);
+                        resolve();
+                    } else {
+                        setTimeout(checkHostStatus, 100);
+                    }
+                } else {
+                    setTimeout(checkHostStatus, 100);
+                }
+            };
+            checkHostStatus();
+        });
+
+        // Create start button only for host
+        if (this.engine.networkManager.isHost) {
+            await this.createStartButton();
+            console.log('[UI] Start button created for host');
+        } else {
+            console.log('[UI] Client - skipping start button creation');
+        }
         
         // Start animation loop for glow effect
         const animate = () => {
@@ -254,12 +207,27 @@ export class VRScoreUI {
             opacity: 1.0
         });
 
-        const timerMesh = new THREE.Mesh(timerGeometry, timerMaterial);
-        timerGeometry.computeBoundingBox();
-        const centerOffset = -(timerGeometry.boundingBox.max.x - timerGeometry.boundingBox.min.x) / 2;
-        timerMesh.position.set(centerOffset, -2.8, 0.01);
-        this.scoreGroup.add(timerMesh);
-        this.timerMesh = timerMesh;
+        // Create new timer mesh if it doesn't exist
+        if (!this.timerMesh) {
+            this.timerMesh = new THREE.Mesh(timerGeometry, timerMaterial);
+            timerGeometry.computeBoundingBox();
+            const centerOffset = -(timerGeometry.boundingBox.max.x - timerGeometry.boundingBox.min.x) / 2;
+            this.timerMesh.position.set(centerOffset, -2.8, 0.01);
+            this.scoreGroup.add(this.timerMesh);
+        } else {
+            // Update existing timer mesh
+            if (this.timerMesh.geometry) {
+                this.timerMesh.geometry.dispose();
+            }
+            if (this.timerMesh.material) {
+                this.timerMesh.material.dispose();
+            }
+            this.timerMesh.geometry = timerGeometry;
+            this.timerMesh.material = timerMaterial;
+            timerGeometry.computeBoundingBox();
+            const centerOffset = -(timerGeometry.boundingBox.max.x - timerGeometry.boundingBox.min.x) / 2;
+            this.timerMesh.position.set(centerOffset, -2.8, 0.01);
+        }
         
         console.log('[UI] Timer display initialized');
     }
@@ -532,8 +500,8 @@ export class VRScoreUI {
     }
 
     update() {
-        // Check for start button interaction
-        if (this.startButton && !this.engine.uiManager.gameStarted) {
+        // Check for start button interaction only if we're the host
+        if (this.startButton && !this.engine.uiManager.gameStarted && this.engine.networkManager?.isHost) {
             const session = this.engine.renderer.xr.getSession();
             
             if (session) {
@@ -577,7 +545,7 @@ export class VRScoreUI {
                     }
                 }
             } else {
-                // Non-VR Mode interaction
+                // Non-VR Mode interaction (only for host)
                 const raycaster = new THREE.Raycaster();
                 const mouse = this.engine.inputManager.mouse;
                 
@@ -586,17 +554,16 @@ export class VRScoreUI {
                     (mouse.x / window.innerWidth) * 2 - 1,
                     -(mouse.y / window.innerHeight) * 2 + 1
                 );
-                
+
                 // Update the picking ray with the camera and mouse position
                 raycaster.setFromCamera(mouseNDC, this.engine.camera);
 
-                // Check intersection in world space
+                // Check for intersections
                 const intersects = raycaster.intersectObject(this.startButton, true);
 
                 if (intersects.length > 0) {
                     this.startButton.material = this.startButton.userData.materials.hover;
-                    
-                    if (this.engine.inputManager.mouseButtons.left) {
+                    if (this.engine.inputManager.mouseDown) {
                         this.startButton.material = this.startButton.userData.materials.pressed;
                         this.engine.uiManager.handleGameStart();
                     }
@@ -608,8 +575,8 @@ export class VRScoreUI {
     }
 
     updateTimer(timeText) {
-        if (!this.timerMesh) {
-            console.warn('[UI] Timer mesh not initialized');
+        if (!this.timerMesh || !this.font) {
+            console.warn('[UI] Timer mesh or font not initialized');
             return;
         }
         
@@ -622,30 +589,14 @@ export class VRScoreUI {
             bevelEnabled: false
         });
 
-        const timerMaterial = new THREE.MeshStandardMaterial({
-            color: 0x00ffff,
-            emissive: 0x00ffff,
-            emissiveIntensity: 20.0,
-            metalness: 0,
-            roughness: 0,
-            transparent: true,
-            opacity: 1.0
-        });
-
-        // Update timer mesh
+        // Dispose of old geometry
         if (this.timerMesh.geometry) {
             this.timerMesh.geometry.dispose();
-            this.timerMesh.geometry = timerGeometry;
-        } else {
-            this.timerMesh.geometry = timerGeometry;
-        }
-        if (this.timerMesh.material) {
-            this.timerMesh.material.dispose();
-            this.timerMesh.material = timerMaterial;
-        } else {
-            this.timerMesh.material = timerMaterial;
         }
 
+        // Update geometry
+        this.timerMesh.geometry = timerGeometry;
+        
         // Position timer
         timerGeometry.computeBoundingBox();
         const centerOffset = -(timerGeometry.boundingBox.max.x - timerGeometry.boundingBox.min.x) / 2;

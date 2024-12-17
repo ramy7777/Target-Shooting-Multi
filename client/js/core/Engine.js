@@ -164,6 +164,9 @@ export class Engine {
             case 'gameEnd':
                 this.uiManager.handleNetworkGameEnd(message.data);
                 break;
+            case 'timerSync':
+                this.uiManager.handleTimerSync(message.data);
+                break;
         }
     }
 }
