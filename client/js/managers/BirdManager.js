@@ -41,7 +41,7 @@ export class BirdManager {
         // Only host spawns birds
         if (this.engine.networkManager && this.engine.networkManager.isHost) {
             if (currentTime - this.lastSpawnTime > this.spawnInterval && this.birds.size < this.maxBirds) {
-                const birdsToSpawn = Math.min(2, this.maxBirds - this.birds.size);
+                const birdsToSpawn = Math.min(3, this.maxBirds - this.birds.size);
                 for (let i = 0; i < birdsToSpawn; i++) {
                     this.spawnBird();
                 }
