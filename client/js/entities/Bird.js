@@ -34,11 +34,13 @@ export class Bird extends THREE.Object3D {
                 varying vec3 vNormal;
                 varying vec3 vWorldPosition;
 
-                float getGrid(vec2 uv, float size) {
-                    vec2 grid = abs(fract(uv * size) - 0.5) * 2.0;
-                    float lineWidth = 0.05;
-                    vec2 lines = smoothstep(1.0 - lineWidth, 1.0, grid);
-                    return max(lines.x, lines.y) * 0.5;
+                // Hexagonal pattern function
+                float hexagonalPattern(vec2 p, float scale) {
+                    p *= scale;
+                    vec2 h = vec2(0.5, 0.866025404); // sqrt(3)/2 for hexagon
+                    vec2 a = mod(p, h * 2.0) - h;
+                    vec2 b = mod(p + h, h * 2.0) - h;
+                    return min(dot(a, a), dot(b, b));
                 }
                 
                 vec2 sphereToTriplanar(vec3 normal) {
@@ -54,37 +56,37 @@ export class Bird extends THREE.Object3D {
                         uv = vWorldPosition.xy;
                     }
                     
-                    // Scale UV and add time-based movement
-                    return uv * 0.5 + vec2(time * 0.1);
+                    // Scale UV and add slower time-based movement
+                    return uv * 0.5 + vec2(time * 0.05);
                 }
                 
                 void main() {
                     // Get UV coordinates based on world position
                     vec2 triplanarUV = sphereToTriplanar(vNormal);
                     
-                    // Create multiple grid layers
-                    float grid1 = getGrid(triplanarUV, 10.0); // Large grid
-                    float grid2 = getGrid(triplanarUV, 50.0) * 0.5; // Fine grid
+                    // Create hexagonal patterns at different scales
+                    float hex1 = smoothstep(0.05, 0.1, hexagonalPattern(triplanarUV, 8.0));
+                    float hex2 = smoothstep(0.05, 0.1, hexagonalPattern(triplanarUV, 16.0)) * 0.5;
                     
-                    // Combine grids
-                    float gridPattern = grid1 + grid2;
+                    // Combine patterns
+                    float pattern = hex1 + hex2;
                     
-                    // Add subtle pulse effect
-                    float pulse = sin(time * 2.0) * 0.1 + 0.9;
+                    // Subtle pulse effect
+                    float pulse = sin(time * 1.5) * 0.05 + 0.95;
                     
-                    // Enhanced rim lighting
+                    // Improved rim lighting
                     vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-                    float rim = 1.0 - max(dot(viewDirection, vNormal), 0.0);
-                    rim = smoothstep(0.2, 1.0, rim);
+                    float rim = pow(1.0 - max(dot(viewDirection, vNormal), 0.0), 2.0);
+                    rim = smoothstep(0.3, 1.0, rim);
                     
-                    // Base visibility
-                    float baseVisibility = 0.4;
+                    // Higher base visibility
+                    float baseVisibility = 0.5;
                     
-                    // Calculate final alpha with enhanced visibility
-                    float alpha = (gridPattern * pulse * 0.5 + rim * 0.5 + baseVisibility) * 0.8;
+                    // Calculate final alpha with more stability
+                    float alpha = (pattern * pulse * 0.4 + rim * 0.3 + baseVisibility) * 0.9;
                     
-                    // Enhanced glow color
-                    vec3 glowColor = color + vec3(0.3) * gridPattern + vec3(0.4) * rim;
+                    // Enhanced glow color with better balance
+                    vec3 glowColor = color + vec3(0.2) * pattern + vec3(0.3) * rim;
                     gl_FragColor = vec4(glowColor, alpha);
                 }
             `,
