@@ -208,15 +208,12 @@ export class NetworkManager {
                 break;
 
             case 'gameStart':
-                console.log('[NETWORK] Received game start message. Data:', data.data, 'Sender:', data.senderId);
-                if (this.engine.uiManager) {
-                    if (!data.data || !data.data.startTime) {
-                        console.error('[NETWORK] Invalid game start data:', data);
-                        return;
-                    }
-                    this.engine.uiManager.handleNetworkGameStart(data.data);
-                } else {
-                    console.error('[NETWORK] UIManager not found for game start');
+                if (!this.isHost) {
+                    console.log('[NETWORK] Client received game start:', data);
+                    this.engine.uiManager.handleNetworkGameStart({
+                        startTime: data.startTime,
+                        duration: data.duration
+                    });
                 }
                 break;
 
@@ -259,6 +256,31 @@ export class NetworkManager {
             default:
                 console.warn('[NETWORK] Unknown message type:', data.type);
         }
+    }
+
+    handleGameStart() {
+        if (!this.isHost) {
+            console.error('[NETWORK] Non-host client tried to start game');
+            return;
+        }
+
+        const startTime = Date.now();
+        const duration = 60000; // 60 seconds
+
+        console.log('[NETWORK] Host starting game at:', startTime);
+
+        // Send game start to all clients
+        this.send({
+            type: 'gameStart',
+            startTime: startTime,
+            duration: duration
+        });
+
+        // Start game locally for host
+        this.engine.uiManager.handleNetworkGameStart({
+            startTime: startTime,
+            duration: duration
+        });
     }
 
     async autoJoinRoom() {

@@ -451,8 +451,12 @@ export class VRScoreUI {
             bevelEnabled: false
         });
 
-        const textMaterial = new THREE.MeshBasicMaterial({ 
-            color: isLocalPlayer ? 0x00ffff : 0xffffff
+        const textMaterial = new THREE.MeshStandardMaterial({ 
+            color: isLocalPlayer ? 0x00ffff : 0xffffff,
+            emissive: isLocalPlayer ? 0x00ffff : 0xffffff,
+            emissiveIntensity: 2.0,
+            metalness: 0,
+            roughness: 0.2
         });
 
         const textMesh = new THREE.Mesh(textGeometry, textMaterial);
@@ -473,8 +477,12 @@ export class VRScoreUI {
             bevelEnabled: false
         });
 
-        const tagMaterial = new THREE.MeshBasicMaterial({ 
-            color: isLocalPlayer ? 0x00ffff : 0xffffff
+        const tagMaterial = new THREE.MeshStandardMaterial({ 
+            color: isLocalPlayer ? 0x00ffff : 0xffffff,
+            emissive: isLocalPlayer ? 0x00ffff : 0xffffff,
+            emissiveIntensity: 2.0,
+            metalness: 0,
+            roughness: 0.2
         });
 
         const tagMesh = new THREE.Mesh(tagGeometry, tagMaterial);

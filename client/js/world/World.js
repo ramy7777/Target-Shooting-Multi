@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
 
 export class World {
     constructor(engine) {
@@ -11,7 +12,18 @@ export class World {
     }
 
     async setupEnvironment() {
+        await this.loadSkybox();
+
         const platformRadius = 10;
+
+        // Minimal ambient light
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.05); // Drastically reduced from 0.2 to 0.05
+        this.engine.scene.add(ambientLight);
+
+        // Very dim central light
+        const centralLight = new THREE.DirectionalLight(0xffffff, 0.1); // Reduced from 0.3 to 0.1
+        centralLight.position.set(0, 10, 0);
+        this.engine.scene.add(centralLight);
 
         // Create circular platform texture with fade
         const textureSize = 1024;
@@ -72,26 +84,6 @@ export class World {
         this.engine.scene.add(gridHelper);
         this.objects.add(gridHelper);
 
-        // Add a darker skybox
-        const skyGeometry = new THREE.BoxGeometry(1000, 1000, 1000);
-        const skyMaterial = new THREE.MeshBasicMaterial({
-            color: 0x1a1a2a,
-            side: THREE.BackSide
-        });
-        this.materials.set('sky', skyMaterial);
-        const skybox = new THREE.Mesh(skyGeometry, skyMaterial);
-        this.engine.scene.add(skybox);
-        this.objects.add(skybox);
-
-        // Add ambient lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
-        this.engine.scene.add(ambientLight);
-
-        // Add central light
-        const centralLight = new THREE.PointLight(0xffffff, 1, platformRadius * 4);
-        centralLight.position.set(0, platformRadius, 0);
-        this.engine.scene.add(centralLight);
-
         // Add accent lights around the platform
         const numLights = 6;
         for (let i = 0; i < numLights; i++) {
@@ -99,7 +91,7 @@ export class World {
             const x = Math.cos(angle) * (platformRadius - 1);
             const z = Math.sin(angle) * (platformRadius - 1);
             
-            const light = new THREE.PointLight(0x4444ff, 0.5, platformRadius * 2);
+            const light = new THREE.PointLight(0x4444ff, 0.05, platformRadius * 2); // Reduced from 0.2 to 0.05
             light.position.set(x, 2, z);
             this.engine.scene.add(light);
         }
@@ -121,6 +113,42 @@ export class World {
 
         // Create holographic room
         this.createHolographicRoom();
+    }
+
+    async loadSkybox() {
+        try {
+            console.log('[WORLD] Loading skybox...');
+            const loader = new EXRLoader();
+            const texture = await loader.loadAsync('/assets/textures/skybox/overcast_soil_puresky_1k.exr');
+            
+            // Configure texture
+            texture.mapping = THREE.EquirectangularReflectionMapping;
+            texture.encoding = THREE.LinearEncoding;
+            
+            // Reduce the intensity of the environment lighting
+            const pmremGenerator = new THREE.PMREMGenerator(this.engine.renderer);
+            pmremGenerator.compileEquirectangularShader();
+            
+            const envMap = pmremGenerator.fromEquirectangular(texture);
+            const scaledTexture = texture.clone();
+            scaledTexture.intensity = 0.05; // Drastically reduced from 0.1 to 0.05
+            
+            // Set scene background and environment
+            this.engine.scene.background = scaledTexture;
+            this.engine.scene.environment = envMap.texture;
+            this.engine.scene.environment.intensity = 1.5; // Increased from default
+            
+            // Change to ReinhardToneMapping with very low exposure
+            this.engine.renderer.toneMapping = THREE.ReinhardToneMapping;
+            this.engine.renderer.toneMappingExposure = 0.1; // Drastically reduced from 0.3 to 0.1
+            
+            texture.dispose();
+            pmremGenerator.dispose();
+            
+            console.log('[WORLD] Skybox loaded successfully');
+        } catch (error) {
+            console.error('[WORLD] Error loading skybox:', error);
+        }
     }
 
     createHolographicRoom() {
@@ -184,10 +212,10 @@ export class World {
                     float border = getBorder(vUv, 0.02);
                     
                     // Calculate final alpha
-                    float alpha = (gridPattern * pulse * edgeFade * 0.3) + border * 0.8;
+                    float alpha = (gridPattern * pulse * edgeFade * 0.15) + border * 0.4; // Increased from 0.1 and 0.3
                     
                     // Output final color with glow
-                    vec3 glowColor = color + vec3(0.2) * gridPattern + vec3(0.5) * border;
+                    vec3 glowColor = color + vec3(0.15) * gridPattern + vec3(0.3) * border; // Increased from 0.1 and 0.2
                     gl_FragColor = vec4(glowColor, alpha);
                 }
             `,
@@ -257,7 +285,7 @@ export class World {
         const edgeMaterial = new THREE.LineBasicMaterial({
             color: 0x00ffff,
             transparent: true,
-            opacity: 0.8,
+            opacity: 0.4, // Increased from 0.3
             blending: THREE.AdditiveBlending
         });
 
@@ -281,6 +309,19 @@ export class World {
                     mesh.material.uniforms.time.value = this.clock.getElapsedTime();
                 }
             });
+        });
+    }
+
+    createBird() {
+        const geometry = new THREE.SphereGeometry(0.2, 32, 32);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x000066,
+            emissive: 0x000033,
+            emissiveIntensity: 0.15, // Increased from 0.1
+            transparent: true,
+            opacity: 0.4, // Increased from 0.3
+            metalness: 0.9,
+            roughness: 0.7 // Slightly decreased from 0.8 for more reflection
         });
     }
 
