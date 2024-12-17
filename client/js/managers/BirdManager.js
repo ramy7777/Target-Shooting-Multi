@@ -6,7 +6,7 @@ export class BirdManager {
         this.engine = engine;
         this.birds = new Map();
         this.lastSpawnTime = 0;
-        this.spawnInterval = 10000; // 10 seconds between spawns
+        this.spawnInterval = 7000; // 7 seconds between spawns
         this.maxBirds = 6; // Maximum number of birds allowed
         this.isSpawning = false;
 
