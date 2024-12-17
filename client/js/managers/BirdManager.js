@@ -70,6 +70,9 @@ export class BirdManager {
         this.birds.set(bird.uuid, bird);
         this.engine.scene.add(bird);
 
+        // Play spawn sound
+        this.engine.audioManager.playBirdSpawn();
+
         // Network the spawn if we're the host
         if (this.engine.networkManager && this.engine.networkManager.isHost) {
             this.engine.networkManager.send({
@@ -78,7 +81,8 @@ export class BirdManager {
                     id: bird.uuid,
                     position: position.toArray(),
                     direction: direction.toArray(),
-                    spawnTime: bird.spawnTime
+                    spawnTime: bird.spawnTime,
+                    playSound: true  // Add sound flag
                 }
             });
         }
@@ -201,6 +205,11 @@ export class BirdManager {
         bird.spawnTime = data.spawnTime;
         this.birds.set(data.id, bird);
         this.engine.scene.add(bird);
+
+        // Play spawn sound if requested
+        if (data.playSound) {
+            this.engine.audioManager.playBirdSpawn();
+        }
 
         // Make sure spawning is enabled when receiving network birds
         this.isSpawning = true;
