@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 export class Bullet extends THREE.Object3D {
-    constructor(position, direction, shooterId, speed = 0.3, lifespan = 2000) {
+    constructor(position, direction, shooterId, speed = 0.21, lifespan = 2000) {
         super();
         
         // Create bullet mesh

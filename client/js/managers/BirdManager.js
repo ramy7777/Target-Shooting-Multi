@@ -10,13 +10,27 @@ export class BirdManager {
         this.maxBirds = 6; // Maximum number of birds allowed
         this.isSpawning = false;
 
-        // Match spawn boundaries exactly with holographic room dimensions
-        const roomDimensions = {
-            width: 5,    // Room width is 5 meters
-            height: 3,   // Room height is 3 meters
-            depth: 3,    // Room depth is 3 meters
-            y: 2        // Room is 2 meters above floor
-        };
+        // Get room dimensions from the platform size
+        const platform = this.engine.world?.ground;
+        let roomDimensions;
+        if (platform) {
+            const boundingBox = new THREE.Box3().setFromObject(platform);
+            const size = boundingBox.getSize(new THREE.Vector3());
+            roomDimensions = {
+                width: size.x * 1.2,    // 20% larger than platform
+                height: Math.max(size.x, size.z) * 0.8, // Height proportional to width/depth
+                depth: size.z * 1.2,    // 20% larger than platform
+                y: Math.max(size.x, size.z) * 0.4  // Half of height
+            };
+        } else {
+            // Fallback dimensions if platform not loaded
+            roomDimensions = {
+                width: 5,
+                height: 3,
+                depth: 3,
+                y: 2
+            };
+        }
 
         // Calculate spawn boundaries to be inside the border lines (2% inset from edges)
         const borderInset = 0.02; // Matches the border thickness in shader (0.02)
@@ -126,7 +140,7 @@ export class BirdManager {
                 // Get the bird's position for the explosion effect
                 const explosionPosition = bird.position.clone();
 
-                // Remove the bird
+                // Remove the bird immediately to prevent duplicate hits
                 this.removeBird(id);
 
                 // Play destruction sound effect

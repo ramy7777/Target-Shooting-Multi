@@ -8,11 +8,13 @@ export class World {
         this.objects = new Set();
         this.clock = new THREE.Clock();
         this.materials = new Map(); // Store reusable materials
+        this.gltfLoader = new GLTFLoader(); // Add GLTFLoader instance
         this.setupEnvironment();
     }
 
     async setupEnvironment() {
         await this.loadSkybox();
+        await this.loadPlatformModel(); // Add platform model loading
 
         const platformRadius = 10;
 
@@ -112,7 +114,7 @@ export class World {
         this.objects.add(glowRing);
 
         // Create holographic room
-        this.createHolographicRoom();
+        // this.createHolographicRoom();
     }
 
     async loadSkybox() {
@@ -151,11 +153,58 @@ export class World {
         }
     }
 
-    createHolographicRoom() {
-        const roomWidth = 5;
-        const roomHeight = 3;
-        const roomDepth = 3;
-        const roomY = 2; // 2 meters above floor level
+    async loadPlatformModel() {
+        try {
+            console.log('[WORLD] Loading platform model...');
+            const gltf = await this.gltfLoader.loadAsync('/assets/models/platform/base_basic_pbr.glb');
+            const platform = gltf.scene;
+            
+            // Keep the same scale as before (1.52)
+            platform.scale.set(1.52, 1.52, 1.52);
+            
+            // Keep the same floor-level position
+            platform.position.set(0, 0, 0);
+            
+            // Keep the same rotations
+            platform.rotation.x = -Math.PI / 2;  // Lie flat
+            platform.rotation.y = Math.PI / 2;   // 90 degrees Y rotation
+            platform.rotation.z = Math.PI / 2;   // 90 degrees Z rotation
+            
+            this.engine.scene.add(platform);
+            console.log('[WORLD] Platform model loaded successfully');
+            
+            // Calculate platform size
+            const boundingBox = new THREE.Box3().setFromObject(platform);
+            const size = boundingBox.getSize(new THREE.Vector3());
+            
+            // Create holographic room based on platform size
+            this.createHolographicRoom(size.x, size.z);
+            
+            // Apply materials and enable shadows
+            platform.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    
+                    // Enhance the blue material properties
+                    if (child.material) {
+                        child.material.metalness = 0.8;  // More metallic look
+                        child.material.roughness = 0.2;  // More shiny
+                        child.material.envMapIntensity = 1.5;  // Stronger reflections
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('[WORLD] Error loading platform model:', error);
+        }
+    }
+
+    createHolographicRoom(platformWidth = 5, platformDepth = 3) {
+        // Make room slightly larger than platform
+        const roomWidth = platformWidth * 1.2;  // 20% larger than platform
+        const roomDepth = platformDepth * 1.2;  // 20% larger than platform
+        const roomHeight = Math.max(roomWidth, roomDepth) * 0.8;  // Height proportional to width/depth
+        const roomY = roomHeight / 2; // Center the room vertically
 
         // Create grid material with custom shader for holographic effect
         const gridMaterial = new THREE.ShaderMaterial({

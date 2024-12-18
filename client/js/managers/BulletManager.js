@@ -79,7 +79,7 @@ export class BulletManager {
             const triggerButton = gamepad.buttons[this.QUEST3_MAPPING.buttons.trigger];
 
             if (triggerButton.pressed && !this.lastTriggerState[i]) {
-                this.createBullet(controller, null, 0.3); // Changed from 2.0 to 0.3 to match Bullet.js
+                this.createBullet(controller, null, 0.21); // Changed from 0.3 to 0.21 for 30% slower speed
                 // Add stronger haptic feedback for shooting
                 if (this.engine.inputManager) {
                     this.engine.inputManager.triggerHapticFeedback(gamepad, 0.8, 100);
