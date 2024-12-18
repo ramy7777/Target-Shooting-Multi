@@ -10,40 +10,48 @@ export class BirdManager {
         this.maxBirds = 6; // Maximum number of birds allowed
         this.isSpawning = false;
 
-        // Get room dimensions from the platform size
+        // Get platform dimensions
         const platform = this.engine.world?.ground;
-        let roomDimensions;
+        let platformDimensions, roomDimensions;
         if (platform) {
             const boundingBox = new THREE.Box3().setFromObject(platform);
             const size = boundingBox.getSize(new THREE.Vector3());
+            platformDimensions = {
+                width: size.x * 0.7225,  // Reduce width by another 15% (0.85 * 0.85)
+                depth: size.z * 0.7225   // Reduce depth by another 15% (0.85 * 0.85)
+            };
             roomDimensions = {
                 width: size.x * 1.2,    // 20% larger than platform
                 height: Math.max(size.x, size.z) * 0.8, // Height proportional to width/depth
-                depth: size.z * 1.2,    // 20% larger than platform
-                y: Math.max(size.x, size.z) * 0.4  // Half of height
+                depth: size.z * 1.2     // 20% larger than platform
             };
         } else {
             // Fallback dimensions if platform not loaded
+            platformDimensions = {
+                width: 2.89,  // 4 * 0.7225
+                depth: 1.80625 // 2.5 * 0.7225
+            };
             roomDimensions = {
                 width: 5,
                 height: 3,
-                depth: 3,
-                y: 2
+                depth: 3
             };
         }
 
-        // Calculate spawn boundaries to be inside the border lines (2% inset from edges)
-        const borderInset = 0.02; // Matches the border thickness in shader (0.02)
-        const safetyPadding = 0.1; // Additional 10cm safety padding for sphere size
-        const totalPadding = borderInset + safetyPadding;
+        // Calculate spawn boundaries to be above the platform
+        const sphereRadius = 0.15; // Approximate radius of the sphere
+        const minHeightAbovePlatform = 0.65; // Increased minimum height to 0.65m above platform
+        const safetyMargin = sphereRadius * 2; // Margin from platform edges
 
         this.spawnBoundary = {
-            minX: -(roomDimensions.width / 2) + totalPadding,
-            maxX: (roomDimensions.width / 2) - totalPadding,
-            minY: roomDimensions.y + totalPadding - 1.5,
-            maxY: roomDimensions.y + roomDimensions.height - totalPadding - 1.5,
-            minZ: -(roomDimensions.depth / 2) + totalPadding,
-            maxZ: (roomDimensions.depth / 2) - totalPadding
+            // Use reduced platform dimensions for X and Z, with safety margin from edges
+            minX: -(platformDimensions.width / 2) + safetyMargin,
+            maxX: (platformDimensions.width / 2) - safetyMargin,
+            // Height range from increased min height above platform to room height
+            minY: minHeightAbovePlatform,
+            maxY: roomDimensions.height - safetyMargin,
+            minZ: -(platformDimensions.depth / 2) + safetyMargin,
+            maxZ: (platformDimensions.depth / 2) - safetyMargin
         };
     }
 
@@ -72,6 +80,8 @@ export class BirdManager {
     }
 
     spawnBird() {
+        if (this.birds.size >= this.maxBirds) return;
+
         const x = THREE.MathUtils.randFloat(this.spawnBoundary.minX, this.spawnBoundary.maxX);
         const y = THREE.MathUtils.randFloat(this.spawnBoundary.minY, this.spawnBoundary.maxY);
         const z = THREE.MathUtils.randFloat(this.spawnBoundary.minZ, this.spawnBoundary.maxZ);

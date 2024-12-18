@@ -204,7 +204,7 @@ export class World {
         const roomWidth = platformWidth * 1.2;  // 20% larger than platform
         const roomDepth = platformDepth * 1.2;  // 20% larger than platform
         const roomHeight = Math.max(roomWidth, roomDepth) * 0.8;  // Height proportional to width/depth
-        const roomY = roomHeight / 2; // Center the room vertically
+        const roomY = (roomHeight / 2) + 0.05; // Center the room vertically and raise by 0.05 meters
 
         // Create grid material with custom shader for holographic effect
         const gridMaterial = new THREE.ShaderMaterial({
@@ -308,44 +308,6 @@ export class World {
             mesh.rotation.set(...rotations[index]);
             mesh.renderOrder = index + 1;
             roomGroup.add(mesh);
-        });
-
-        // Create edge lines
-        const edges = [
-            // Vertical edges
-            { start: [-roomWidth/2, -roomHeight/2, roomDepth/2], end: [-roomWidth/2, roomHeight/2, roomDepth/2] },
-            { start: [roomWidth/2, -roomHeight/2, roomDepth/2], end: [roomWidth/2, roomHeight/2, roomDepth/2] },
-            { start: [-roomWidth/2, -roomHeight/2, -roomDepth/2], end: [-roomWidth/2, roomHeight/2, -roomDepth/2] },
-            { start: [roomWidth/2, -roomHeight/2, -roomDepth/2], end: [roomWidth/2, roomHeight/2, -roomDepth/2] },
-            
-            // Horizontal edges - Top
-            { start: [-roomWidth/2, roomHeight/2, roomDepth/2], end: [roomWidth/2, roomHeight/2, roomDepth/2] },
-            { start: [-roomWidth/2, roomHeight/2, -roomDepth/2], end: [roomWidth/2, roomHeight/2, -roomDepth/2] },
-            { start: [-roomWidth/2, roomHeight/2, roomDepth/2], end: [-roomWidth/2, roomHeight/2, -roomDepth/2] },
-            { start: [roomWidth/2, roomHeight/2, roomDepth/2], end: [roomWidth/2, roomHeight/2, -roomDepth/2] },
-            
-            // Horizontal edges - Bottom
-            { start: [-roomWidth/2, -roomHeight/2, roomDepth/2], end: [roomWidth/2, -roomHeight/2, roomDepth/2] },
-            { start: [-roomWidth/2, -roomHeight/2, -roomDepth/2], end: [roomWidth/2, -roomHeight/2, -roomDepth/2] },
-            { start: [-roomWidth/2, -roomHeight/2, roomDepth/2], end: [-roomWidth/2, -roomHeight/2, -roomDepth/2] },
-            { start: [roomWidth/2, -roomHeight/2, roomDepth/2], end: [roomWidth/2, -roomHeight/2, -roomDepth/2] }
-        ];
-
-        const edgeMaterial = new THREE.LineBasicMaterial({
-            color: 0x00ffff,
-            transparent: true,
-            opacity: 0.4, // Increased from 0.3
-            blending: THREE.AdditiveBlending
-        });
-
-        edges.forEach(edge => {
-            const geometry = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(...edge.start),
-                new THREE.Vector3(...edge.end)
-            ]);
-            const line = new THREE.Line(geometry, edgeMaterial);
-            line.renderOrder = 2;
-            roomGroup.add(line);
         });
 
         this.engine.scene.add(roomGroup);
