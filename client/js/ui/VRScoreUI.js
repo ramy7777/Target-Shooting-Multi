@@ -16,6 +16,29 @@ export class VRScoreUI {
 
         // Start the update loop for player tags position
         this.updatePlayerTagsPosition();
+
+        // Add click handler for mouse input
+        document.addEventListener('click', (event) => {
+            if (!this.engine.uiManager.gameStarted && this.startButton) {
+                console.log('[UI] Click event received');
+                const mouse = new THREE.Vector2(
+                    (event.clientX / window.innerWidth) * 2 - 1,
+                    -(event.clientY / window.innerHeight) * 2 + 1
+                );
+                
+                const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(mouse, this.engine.camera);
+                
+                const intersects = raycaster.intersectObject(this.startButton, true);
+                console.log('[UI] Click intersections:', intersects.length);
+                
+                if (intersects.length > 0) {
+                    console.log('[UI] Start button clicked directly');
+                    this.startButton.material = this.startButton.userData.materials.pressed;
+                    this.engine.uiManager.handleGameStart();
+                }
+            }
+        });
     }
 
     updatePlayerTagsPosition() {
@@ -283,6 +306,7 @@ export class VRScoreUI {
     }
 
     async createStartButton() {
+        console.log('[UI] Creating start button');
         // Create button base geometry with rounded edges
         const geometry = new THREE.BoxGeometry(1.4, 0.7, 0.15);
         geometry.translate(0, 0, 0.075); // Move pivot to back face
@@ -311,28 +335,47 @@ export class VRScoreUI {
                 color: 0x0066cc,
                 emissive: 0x0066cc,
                 emissiveIntensity: 0.3,
-                metalness: 0.7,
+                metalness: 0.8,
                 roughness: 0.4,
                 transparent: true,
                 opacity: 0.95
             })
         };
 
-        // Create button mesh
-        this.startButton = new THREE.Mesh(geometry, materials.default);
-        this.startButton.position.set(0, -2, 0.1);
-        this.startButton.userData = {
-            type: 'button',
-            materials: materials,
-            isStartButton: true
-        };
+        const button = new THREE.Mesh(geometry, materials.default);
+        button.userData.materials = materials;
+        button.position.set(0, -2, 0.1);
+        console.log('[UI] Button position:', button.position);
+
+        // Add text to the button
+        const textGeometry = new TextGeometry('Start Game', {
+            font: this.font,
+            size: 0.15,
+            height: 0.03,
+            curveSegments: 4,
+            bevelEnabled: false
+        });
+
+        const textMaterial = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            emissive: 0xffffff,
+            emissiveIntensity: 1.0,
+            metalness: 0,
+            roughness: 0.2
+        });
+
+        const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+        textGeometry.computeBoundingBox();
+        const centerOffset = -(textGeometry.boundingBox.max.x - textGeometry.boundingBox.min.x) / 2;
+        textMesh.position.set(centerOffset, -0.07, 0.15);
+        button.add(textMesh);
 
         // Add glow effect
-        const glowGeometry = new THREE.PlaneGeometry(1.6, 0.9);
+        const glowGeometry = new THREE.BoxGeometry(1.5, 0.8, 0.16);
         const glowMaterial = new THREE.ShaderMaterial({
             uniforms: {
-                color: { value: new THREE.Color(0x1a9fff) },
-                time: { value: 0 }
+                time: { value: 0 },
+                color: { value: new THREE.Color(0x1a9fff) }
             },
             vertexShader: `
                 varying vec2 vUv;
@@ -342,56 +385,29 @@ export class VRScoreUI {
                 }
             `,
             fragmentShader: `
-                uniform vec3 color;
                 uniform float time;
+                uniform vec3 color;
                 varying vec2 vUv;
                 void main() {
-                    float dist = length(vUv - vec2(0.5));
-                    float pulse = 0.4 + 0.2 * sin(time * 3.0);
-                    float alpha = smoothstep(0.5, 0.2, dist) * pulse;
-                    gl_FragColor = vec4(color, alpha * 0.5);
+                    float glow = sin(time * 2.0) * 0.5 + 0.5;
+                    gl_FragColor = vec4(color, glow * 0.3);
                 }
             `,
             transparent: true,
-            side: THREE.DoubleSide,
-            depthWrite: false
+            blending: THREE.AdditiveBlending,
+            side: THREE.BackSide
         });
 
         const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
-        glowMesh.position.set(0, 0, -0.05);
-        this.startButton.add(glowMesh);
+        button.add(glowMesh);
 
-        // Create text with modern font and better contrast
-        if (this.font) {
-            const textGeometry = new TextGeometry('START', {
-                font: this.font,
-                size: 0.2,
-                height: 0,
-                curveSegments: 12,
-                bevelEnabled: false
-            });
-
-            textGeometry.computeBoundingBox();
-            const centerOffset = -(textGeometry.boundingBox.max.x - textGeometry.boundingBox.min.x) / 2;
-            const textMaterial = new THREE.MeshStandardMaterial({
-                color: 0xffffff,
-                emissive: 0xffffff,
-                emissiveIntensity: 0.5,
-                metalness: 0,
-                roughness: 0.2
-            });
-
-            const textMesh = new THREE.Mesh(textGeometry, textMaterial);
-            textMesh.position.set(centerOffset, -0.07, 0.16);
-            this.startButton.add(textMesh);
-        }
-
-        // Add to scoreGroup
-        this.scoreGroup.add(this.startButton);
+        this.startButton = button;
+        this.scoreGroup.add(button);
+        console.log('[UI] Start button created and added to scene');
 
         // Start glow animation
         const animate = () => {
-            if (glowMaterial && !this.engine.uiManager.gameStarted) {
+            if (glowMaterial) {
                 glowMaterial.uniforms.time.value = performance.now() * 0.001;
             }
             requestAnimationFrame(animate);
@@ -535,6 +551,7 @@ export class VRScoreUI {
         // Check for start button interaction
         if (this.startButton && !this.engine.uiManager.gameStarted) {
             const session = this.engine.renderer.xr.getSession();
+            const raycaster = new THREE.Raycaster();
             
             if (session) {
                 // VR Mode interaction
@@ -550,7 +567,6 @@ export class VRScoreUI {
 
                     // Create temporary objects for raycasting
                     const tempMatrix = new THREE.Matrix4();
-                    const raycaster = new THREE.Raycaster();
                     
                     tempMatrix.identity().extractRotation(controller.matrixWorld);
                     raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
@@ -578,8 +594,16 @@ export class VRScoreUI {
                 }
             } else {
                 // Non-VR Mode interaction
-                const raycaster = new THREE.Raycaster();
                 const mouse = this.engine.inputManager.mouse;
+                const mouseClicked = this.engine.inputManager.mouseClicked;
+                
+                // Debug mouse state
+                console.log('[UI] Mouse state:', {
+                    x: mouse.x,
+                    y: mouse.y,
+                    clicked: mouseClicked,
+                    buttons: this.engine.inputManager.mouseButtons
+                });
                 
                 // Convert mouse position to normalized device coordinates
                 const mouseNDC = new THREE.Vector2(
@@ -587,16 +611,25 @@ export class VRScoreUI {
                     -(mouse.y / window.innerHeight) * 2 + 1
                 );
                 
+                // Debug NDC coordinates
+                console.log('[UI] Mouse NDC:', mouseNDC);
+                
                 // Update the picking ray with the camera and mouse position
                 raycaster.setFromCamera(mouseNDC, this.engine.camera);
 
+                // Debug ray direction
+                console.log('[UI] Ray direction:', raycaster.ray.direction);
+
                 // Check intersection in world space
                 const intersects = raycaster.intersectObject(this.startButton, true);
+                console.log('[UI] Intersections:', intersects.length);
 
                 if (intersects.length > 0) {
+                    console.log('[UI] Button hovered, distance:', intersects[0].distance);
                     this.startButton.material = this.startButton.userData.materials.hover;
                     
-                    if (this.engine.inputManager.mouseButtons.left) {
+                    if (mouseClicked) {
+                        console.log('[UI] Start button clicked with mouse');
                         this.startButton.material = this.startButton.userData.materials.pressed;
                         this.engine.uiManager.handleGameStart();
                     }

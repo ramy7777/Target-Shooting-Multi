@@ -26,6 +26,26 @@ export class UIManager {
         }
         
         console.log('[GAME_START] Starting game...');
+        
+        // Reset scores before starting new game
+        if (this.engine.scoreManager) {
+            console.log('[GAME_START] Resetting scores');
+            this.engine.scoreManager.resetScores();
+        }
+
+        // Remove any remaining spheres
+        if (this.engine.sphereManager) {
+            console.log('[GAME_START] Cleaning up remaining spheres');
+            try {
+                const spheres = Array.from(this.engine.sphereManager.spheres.entries());
+                for (const [id, sphere] of spheres) {
+                    this.engine.sphereManager.removeSphere(id);
+                }
+            } catch (error) {
+                console.error('[GAME_START] Error cleaning up spheres:', error);
+            }
+        }
+        
         this.gameStarted = true;
         this.gameStartTime = Date.now();
         
@@ -95,6 +115,25 @@ export class UIManager {
         // Stop any existing timer
         this.stopTimer();
         
+        // Reset scores for network clients too
+        if (this.engine.scoreManager) {
+            console.log('[NETWORK_GAME_START] Resetting scores');
+            this.engine.scoreManager.resetScores();
+        }
+
+        // Remove any remaining spheres for network clients
+        if (this.engine.sphereManager) {
+            console.log('[NETWORK_GAME_START] Cleaning up remaining spheres');
+            try {
+                const spheres = Array.from(this.engine.sphereManager.spheres.entries());
+                for (const [id, sphere] of spheres) {
+                    this.engine.sphereManager.removeSphere(id);
+                }
+            } catch (error) {
+                console.error('[NETWORK_GAME_START] Error cleaning up spheres:', error);
+            }
+        }
+        
         // Set game state
         this.gameStarted = true;
         this.gameStartTime = data.startTime;
@@ -127,6 +166,59 @@ export class UIManager {
         console.log('[NETWORK_GAME_START] Timer started');
     }
 
+    handleTimerEnd() {
+        console.log('[TIMER] Game ended');
+        this.gameStarted = false;
+        this.stopTimer();
+
+        // Show start button only for host
+        if (this.engine.networkManager?.isHost && this.engine.scoreManager.vrScoreUI?.startButton) {
+            console.log('[TIMER] Showing start button for host');
+            this.engine.scoreManager.vrScoreUI.startButton.visible = true;
+        }
+
+        // Remove all spheres when timer ends
+        if (this.engine.sphereManager) {
+            console.log('[TIMER] Cleaning up spheres at game end');
+            try {
+                const spheres = Array.from(this.engine.sphereManager.spheres.entries());
+                for (const [id, sphere] of spheres) {
+                    this.engine.sphereManager.removeSphere(id);
+                }
+            } catch (error) {
+                console.error('[TIMER] Error cleaning up spheres:', error);
+            }
+        }
+
+        // Broadcast game end to all clients
+        if (this.engine.networkManager?.isHost) {
+            console.log('[TIMER] Broadcasting game end to clients');
+            this.engine.networkManager.send({
+                type: 'gameEnd',
+                senderId: this.engine.networkManager.localPlayerId
+            });
+        }
+    }
+
+    handleNetworkGameEnd() {
+        console.log('[NETWORK] Received game end');
+        this.gameStarted = false;
+        this.stopTimer();
+
+        // Remove all spheres for clients too
+        if (this.engine.sphereManager) {
+            console.log('[NETWORK] Cleaning up spheres at game end');
+            try {
+                const spheres = Array.from(this.engine.sphereManager.spheres.entries());
+                for (const [id, sphere] of spheres) {
+                    this.engine.sphereManager.removeSphere(id);
+                }
+            } catch (error) {
+                console.error('[NETWORK] Error cleaning up spheres:', error);
+            }
+        }
+    }
+
     handleGameEnd() {
         console.log('[GAME_END] Ending game');
         // Clear timer interval
@@ -148,31 +240,19 @@ export class UIManager {
                 this.engine.birdManager.removeBird(id);
             });
         }
+
+        // Remove all spheres
+        if (this.engine.sphereManager) {
+            this.engine.sphereManager.spheres.forEach((sphere, id) => {
+                this.engine.sphereManager.removeSphere(id);
+            });
+        }
         
         // Send game end event if we're the host
         if (this.engine.networkManager?.isHost) {
             this.engine.networkManager.send({
                 type: 'gameEnd',
                 senderId: this.engine.networkManager.localPlayerId
-            });
-        }
-    }
-
-    handleNetworkGameEnd() {
-        // Reset game state
-        this.gameStarted = false;
-        this.gameStartTime = 0;
-        
-        // Show start button in VR score UI
-        if (this.engine.scoreManager.vrScoreUI && this.engine.scoreManager.vrScoreUI.startButton) {
-            this.engine.scoreManager.vrScoreUI.startButton.visible = true;
-        }
-        
-        // Stop bird spawning and remove all birds
-        if (this.engine.birdManager) {
-            this.engine.birdManager.isSpawning = false;
-            this.engine.birdManager.birds.forEach((bird, id) => {
-                this.engine.birdManager.removeBird(id);
             });
         }
     }
@@ -211,12 +291,7 @@ export class UIManager {
         // End game if time is up
         if (remainingTime <= 0) {
             console.log('[TIMER] Time is up');
-            if (this.engine.networkManager?.isHost) {
-                this.handleGameEnd();
-            } else {
-                // For non-host clients, just stop the timer
-                this.stopTimer();
-            }
+            this.handleTimerEnd();
         }
     }
 

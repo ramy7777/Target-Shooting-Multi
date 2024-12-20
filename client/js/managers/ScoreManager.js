@@ -196,6 +196,27 @@ class ScoreManager {
             this.scoresList.appendChild(scoreElement);
         });
     }
+
+    resetScores() {
+        console.log('[SCORE] Resetting all scores');
+        this.scores.clear();
+        
+        // Reset UI if available
+        if (this.vrScoreUI) {
+            // Clear all existing score displays
+            for (const playerId of this.scores.keys()) {
+                this.vrScoreUI.removePlayer(playerId);
+            }
+        }
+
+        // Network the score reset if we're the host
+        if (this.engine.networkManager?.isHost) {
+            this.engine.networkManager.send({
+                type: 'scoreReset',
+                senderId: this.engine.networkManager.localPlayerId
+            });
+        }
+    }
 }
 
 export { ScoreManager };

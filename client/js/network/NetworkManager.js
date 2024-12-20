@@ -89,15 +89,14 @@ export class NetworkManager {
         this.players.clear();
     }
 
-    handleMessage(message) {
-        const data = JSON.parse(message.data);
-        console.log('[NETWORK] Received message:', data);
-
-        // Don't process our own messages
-        if (data.senderId === this.localPlayerId) {
-            console.log('[NETWORK] Ignoring own message');
+    handleMessage(event) {
+        const data = JSON.parse(event.data);
+        if (!data || !data.type) {
+            console.error('[NETWORK] Received invalid message:', data);
             return;
         }
+
+        console.log('[NETWORK] Received message:', data.type, 'from:', data.senderId);
 
         switch (data.type) {
             case 'init':
@@ -208,21 +207,35 @@ export class NetworkManager {
                 break;
 
             case 'gameStart':
-                if (!this.isHost) {
-                    console.log('[NETWORK] Client received game start:', data);
+                console.log('[NETWORK] Handling game start message');
+                if (this.engine.uiManager) {
                     this.engine.uiManager.handleNetworkGameStart({
-                        startTime: data.startTime,
-                        duration: data.duration
+                        startTime: data.data.startTime,
+                        duration: data.data.duration
                     });
                 }
                 break;
 
             case 'gameEnd':
-                console.log('[NETWORK] Received game end message from:', data.senderId);
+                console.log('[NETWORK] Handling game end message');
                 if (this.engine.uiManager) {
                     this.engine.uiManager.handleNetworkGameEnd();
-                } else {
-                    console.error('[NETWORK] UIManager not found for game end');
+                }
+                break;
+
+            case 'scoreReset':
+                console.log('[NETWORK] Received score reset from:', data.senderId);
+                if (this.engine.scoreManager) {
+                    // Clear scores map
+                    const playerIds = Array.from(this.engine.scoreManager.scores.keys());
+                    this.engine.scoreManager.scores.clear();
+                    
+                    // Remove score displays from UI
+                    if (this.engine.scoreManager.vrScoreUI) {
+                        for (const playerId of playerIds) {
+                            this.engine.scoreManager.vrScoreUI.removePlayer(playerId);
+                        }
+                    }
                 }
                 break;
 
@@ -265,22 +278,27 @@ export class NetworkManager {
         }
 
         const startTime = Date.now();
-        const duration = 60000; // 60 seconds
+        const duration = 120000; // 120 seconds
 
         console.log('[NETWORK] Host starting game at:', startTime);
 
         // Send game start to all clients
         this.send({
             type: 'gameStart',
-            startTime: startTime,
-            duration: duration
+            data: {
+                startTime: startTime,
+                duration: duration
+            },
+            senderId: this.localPlayerId
         });
 
         // Start game locally for host
-        this.engine.uiManager.handleNetworkGameStart({
-            startTime: startTime,
-            duration: duration
-        });
+        if (this.engine.uiManager) {
+            this.engine.uiManager.handleNetworkGameStart({
+                startTime: startTime,
+                duration: duration
+            });
+        }
     }
 
     async autoJoinRoom() {

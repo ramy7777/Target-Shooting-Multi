@@ -13,6 +13,7 @@ export class InputManager {
             middle: false,
             right: false
         };
+        this.mouseClicked = false;
 
         // Controller settings from documentation
         this.deadzone = 0.2;           // Thumbstick deadzone
@@ -57,18 +58,25 @@ export class InputManager {
         document.addEventListener('mousemove', (event) => {
             this.mouse.x = event.clientX;
             this.mouse.y = event.clientY;
+            console.log('[INPUT] Mouse moved:', { x: this.mouse.x, y: this.mouse.y });
         });
         
         document.addEventListener('mousedown', (event) => {
+            console.log('[INPUT] Mouse down:', event.button);
             if (event.button === 0) { // Left click
                 this.mouseButtons.left = true;
+                this.mouseClicked = true;
+                console.log('[INPUT] Left mouse button pressed');
                 this.handlePCShoot();
             }
         });
         
         document.addEventListener('mouseup', (event) => {
+            console.log('[INPUT] Mouse up:', event.button);
             if (event.button === 0) { // Left click
                 this.mouseButtons.left = false;
+                this.mouseClicked = false;
+                console.log('[INPUT] Left mouse button released');
             }
         });
 
