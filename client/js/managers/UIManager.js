@@ -228,9 +228,12 @@ export class UIManager {
         this.gameStarted = false;
         this.gameStartTime = 0;
         
-        // Show start button in VR score UI
-        if (this.engine.scoreManager.vrScoreUI && this.engine.scoreManager.vrScoreUI.startButton) {
-            this.engine.scoreManager.vrScoreUI.startButton.visible = true;
+        // Show start button only to host
+        if (this.engine.networkManager.isHost) {
+            if (this.engine.vrScoreUI && this.engine.vrScoreUI.startButton) {
+                this.engine.vrScoreUI.startButton.visible = true;
+                console.log('[UI] Start button shown to host after game end');
+            }
         }
         
         // Stop bird spawning and remove all birds
