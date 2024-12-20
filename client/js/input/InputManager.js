@@ -76,6 +76,8 @@ export class InputManager {
             left: false,
             right: false
         };
+        this.lastMouseClick = 0;
+        this.mouseClickCooldown = 100; // ms
     }
 
     initializeControllers() {
@@ -343,13 +345,20 @@ export class InputManager {
         }
         this.lastMouseClick = now;
 
-        // Create bullet from camera position and direction
-        const position = new THREE.Vector3();
-        const direction = new THREE.Vector3(0, 0, -1);
+        // Calculate mouse position in normalized device coordinates (-1 to +1)
+        const mouse = new THREE.Vector2();
+        mouse.x = (this.mouse.x / window.innerWidth) * 2 - 1;
+        mouse.y = -(this.mouse.y / window.innerHeight) * 2 + 1;
+
+        // Update the picking ray with the camera and mouse position
+        this.raycaster.setFromCamera(mouse, this.engine.camera);
+
+        // Get the direction from the raycaster
+        const direction = this.raycaster.ray.direction;
         
-        // Get camera position and direction
+        // Get camera position
+        const position = new THREE.Vector3();
         this.engine.camera.getWorldPosition(position);
-        direction.applyQuaternion(this.engine.camera.quaternion);
 
         // Offset bullet spawn position slightly forward to avoid self-collision
         const spawnOffset = direction.clone().multiplyScalar(0.5);
