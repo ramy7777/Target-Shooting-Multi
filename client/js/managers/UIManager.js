@@ -10,7 +10,7 @@ export class UIManager {
         
         // Timer properties
         this.gameStartTime = 0;
-        this.gameDuration = 120000; // 120 seconds
+        this.gameDuration = 30000; // 30 seconds
         this.timerInterval = null;
     }
 
