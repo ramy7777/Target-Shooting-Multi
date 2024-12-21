@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
+import { Ball } from '../entities/Ball.js';
+import { Paddle } from '../entities/Paddle.js';
 
 export class World {
     constructor(engine) {
@@ -8,8 +10,12 @@ export class World {
         this.clock = new THREE.Clock();
         this.ground = null;
         this.platform = null;
+        this.ball = null;
+        this.leftPaddle = null;
+        this.rightPaddle = null;
         this.setupGround();
         this.setupPlatform();
+        this.setupPaddles();
     }
 
     setupGround() {
@@ -28,8 +34,10 @@ export class World {
     }
 
     setupPlatform() {
-        // Create a semi-transparent platform 1 unit above the ground
-        const platformGeometry = new THREE.BoxGeometry(3.3, 0.05, 3.3); // Reduced from 10x10 to 3.3x3.3
+        // Create a semi-transparent platform 0.65 units above the ground
+        // Width: 1.65 * 0.8 = 1.32 (20% reduction)
+        // Length: 1.65 * 1.3 = 2.145 (30% increase)
+        const platformGeometry = new THREE.BoxGeometry(1.32, 0.05, 2.145);
         const platformMaterial = new THREE.MeshPhongMaterial({
             color: 0x44ccff,
             transparent: true,
@@ -39,8 +47,15 @@ export class World {
         });
 
         this.platform = new THREE.Mesh(platformGeometry, platformMaterial);
-        this.platform.position.y = 1; // 1 unit above ground
+        this.platform.position.y = 0.65; // Lowered from 0.7 to 0.65
+        this.platform.rotation.y = Math.PI / 2; // Rotated 90 degrees
         this.engine.scene.add(this.platform);
+    }
+
+    setupPaddles() {
+        // Create left and right paddles
+        this.leftPaddle = new Paddle(this.engine, true);
+        this.rightPaddle = new Paddle(this.engine, false);
     }
 
     async setupEnvironment() {
@@ -176,6 +191,18 @@ export class World {
         }
     }
 
+    startGame() {
+        console.log('[WORLD] Starting game, creating ball');
+        // Create new ball if it doesn't exist
+        if (!this.ball) {
+            console.log('[WORLD] Creating new ball');
+            this.ball = new Ball(this.engine);
+        } else {
+            console.log('[WORLD] Resetting existing ball');
+            this.ball.reset();
+        }
+    }
+
     update(deltaTime) {
         if (this.engine.xrSession) {
             // Handle AR mode differently
@@ -185,20 +212,15 @@ export class World {
                     this.engine.camera.position.y = 1.0;
                 }
 
-                // Make platform and ground semi-transparent in AR
+                // Make platform visible but semi-transparent in AR
                 if (this.platform) {
                     this.platform.visible = true;
                     this.platform.material.opacity = 0.3;
                 }
 
-                // Keep ground visible but make it semi-transparent
+                // Hide ground in AR mode
                 if (this.ground) {
-                    this.ground.visible = true;
-                    if (this.ground.material) {
-                        this.ground.material.transparent = true;
-                        this.ground.material.opacity = 0.3;
-                        this.ground.material.depthWrite = false;
-                    }
+                    this.ground.visible = false;
                 }
             } else {
                 // Reset camera height for VR mode
@@ -212,7 +234,7 @@ export class World {
                     this.platform.material.opacity = 0.5;
                 }
 
-                // Reset ground visibility for VR mode
+                // Show ground in VR mode
                 if (this.ground) {
                     this.ground.visible = true;
                     if (this.ground.material) {
@@ -222,6 +244,20 @@ export class World {
                     }
                 }
             }
+        }
+
+        // Update paddles
+        if (this.leftPaddle) this.leftPaddle.update();
+        if (this.rightPaddle) this.rightPaddle.update();
+
+        // Update ball and check paddle collisions
+        if (this.ball) {
+            // Check paddle collisions before updating ball position
+            if (this.leftPaddle) this.leftPaddle.checkBallCollision(this.ball);
+            if (this.rightPaddle) this.rightPaddle.checkBallCollision(this.ball);
+            
+            // Update ball position
+            this.ball.update(deltaTime);
         }
     }
 
@@ -277,5 +313,17 @@ export class World {
         // Dispose geometries and materials
         if (this.ground && this.ground.geometry) this.ground.geometry.dispose();
         if (this.platform && this.platform.geometry) this.platform.geometry.dispose();
+        if (this.ball) {
+            this.ball.dispose();
+            this.ball = null;
+        }
+        if (this.leftPaddle) {
+            this.leftPaddle.dispose();
+            this.leftPaddle = null;
+        }
+        if (this.rightPaddle) {
+            this.rightPaddle.dispose();
+            this.rightPaddle = null;
+        }
     }
 }

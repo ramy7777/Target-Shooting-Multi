@@ -20,10 +20,7 @@ export class UIManager {
     }
 
     handleGameStart() {
-        if (this.gameStarted) {
-            console.log('[GAME_START] Game already started');
-            return;
-        }
+        if (this.gameStarted) return;
         
         console.log('[GAME_START] Starting game...');
         
@@ -39,8 +36,17 @@ export class UIManager {
             this.engine.sphereManager.removeAllSpheres();
         }
         
+        // Start the game
         this.gameStarted = true;
         this.gameStartTime = Date.now();
+        
+        // Start the ball
+        console.log('[GAME_START] Starting ball');
+        if (this.engine.world) {
+            this.engine.world.startGame();
+        } else {
+            console.error('[GAME_START] World not found!');
+        }
         
         // Hide start button in VR score UI
         if (this.engine.vrScoreUI && this.engine.vrScoreUI.startButton) {
@@ -48,7 +54,10 @@ export class UIManager {
             this.engine.vrScoreUI.startButton.visible = false;
         }
         
-        // Send start game event to all players with synchronized time
+        // Start the timer
+        this.startTimer();
+        
+        // Send game start event if we're the host
         if (this.engine.networkManager?.isHost) {
             const startData = {
                 startTime: this.gameStartTime,
@@ -66,7 +75,6 @@ export class UIManager {
         console.log('[GAME_START] Starting local game');
         this.startGame();
         this.updateTimer(); // Update timer immediately
-        this.startTimer();
     }
 
     startGame() {

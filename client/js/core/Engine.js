@@ -327,6 +327,12 @@ export class Engine {
     update(time, frame) {
         const delta = this.clock.getDelta();
 
+        // Update world if it exists
+        if (this.world) {
+            console.log('[ENGINE] Updating world');
+            this.world.update(delta);
+        }
+        
         // Update all managers
         this.inputManager.update(delta, frame);
         this.playerManager.update(delta, frame);
@@ -334,7 +340,6 @@ export class Engine {
         this.birdManager.update(delta);
         this.uiManager.update();
         this.scoreManager.update(delta);
-        this.world.update();
         this.particleManager.update();
 
         // Update OrbitControls only if not in VR

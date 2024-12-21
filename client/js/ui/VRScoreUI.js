@@ -598,6 +598,7 @@ export class VRScoreUI {
                                     gamepad.hapticActuators[0].pulse(1.0, 100);
                                 }
                                 
+                                console.log('[VRScoreUI] Start button pressed, calling handleGameStart');
                                 this.engine.uiManager.handleGameStart();
                             }
                         } else {
@@ -609,39 +610,23 @@ export class VRScoreUI {
                     const mouse = this.engine.inputManager.mouse;
                     const mouseClicked = this.engine.inputManager.mouseClicked;
                     
-                    // Debug mouse state
-                    console.log('[UI] Mouse state:', {
-                        x: mouse.x,
-                        y: mouse.y,
-                        clicked: mouseClicked,
-                        buttons: this.engine.inputManager.mouseButtons
-                    });
-                    
                     // Convert mouse position to normalized device coordinates
                     const mouseNDC = new THREE.Vector2(
                         (mouse.x / window.innerWidth) * 2 - 1,
                         -(mouse.y / window.innerHeight) * 2 + 1
                     );
                     
-                    // Debug NDC coordinates
-                    console.log('[UI] Mouse NDC:', mouseNDC);
-                    
                     // Update the picking ray with the camera and mouse position
                     raycaster.setFromCamera(mouseNDC, this.engine.camera);
 
-                    // Debug ray direction
-                    console.log('[UI] Ray direction:', raycaster.ray.direction);
-
                     // Check intersection in world space
                     const intersects = raycaster.intersectObject(this.startButton, true);
-                    console.log('[UI] Intersections:', intersects.length);
 
                     if (intersects.length > 0) {
-                        console.log('[UI] Button hovered, distance:', intersects[0].distance);
                         this.startButton.material = this.startButton.userData.materials.hover;
                         
                         if (mouseClicked) {
-                            console.log('[UI] Start button clicked with mouse');
+                            console.log('[VRScoreUI] Start button clicked, calling handleGameStart');
                             this.startButton.material = this.startButton.userData.materials.pressed;
                             this.engine.uiManager.handleGameStart();
                         }
