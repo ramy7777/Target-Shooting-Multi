@@ -21,7 +21,7 @@ export class Engine {
 
         // Create camera
         this.camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.camera.position.set(0, 0, 0);
+        this.camera.position.set(0, 1.3, 0);
         this.camera.lookAt(0, 0, -1);
         
         // Create camera rig for VR and PC
@@ -177,8 +177,8 @@ export class Engine {
             let refSpace = await session.requestReferenceSpace(referenceSpaceType);
             
             if (mode === 'immersive-ar') {
-                // Adjust camera rig position for AR to standard height (1.6m)
-                this.cameraRig.position.y = 1.6;
+                // Adjust camera rig position for AR to lower height (1.0m)
+                this.cameraRig.position.y = 1.0;
                 
                 // Configure renderer for AR transparency
                 this.renderer.setClearAlpha(0);

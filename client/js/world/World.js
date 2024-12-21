@@ -5,10 +5,42 @@ import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
 export class World {
     constructor(engine) {
         this.engine = engine;
-        this.objects = new Set();
         this.clock = new THREE.Clock();
-        this.materials = new Map(); // Store reusable materials
-        this.setupEnvironment();
+        this.ground = null;
+        this.platform = null;
+        this.setupGround();
+        this.setupPlatform();
+    }
+
+    setupGround() {
+        // Create fallback ground
+        const groundSize = 40;
+        const groundGeometry = new THREE.PlaneGeometry(groundSize, groundSize);
+        const groundMaterial = new THREE.MeshStandardMaterial({
+            color: 0x3a3a4a,
+            roughness: 0.4,
+            metalness: 0.6
+        });
+
+        this.ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        this.ground.rotation.x = -Math.PI / 2;
+        this.engine.scene.add(this.ground);
+    }
+
+    setupPlatform() {
+        // Create a semi-transparent platform 1 unit above the ground
+        const platformGeometry = new THREE.BoxGeometry(3.3, 0.05, 3.3); // Reduced from 10x10 to 3.3x3.3
+        const platformMaterial = new THREE.MeshPhongMaterial({
+            color: 0x44ccff,
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+
+        this.platform = new THREE.Mesh(platformGeometry, platformMaterial);
+        this.platform.position.y = 1; // 1 unit above ground
+        this.engine.scene.add(this.platform);
     }
 
     async setupEnvironment() {
@@ -73,8 +105,6 @@ export class World {
         platform.rotation.x = -Math.PI / 2;
         platform.position.y = 0;
         this.engine.scene.add(platform);
-        this.ground = platform;
-        this.objects.add(platform);
 
         // Add a grid helper that matches the platform size
         const gridHelper = new THREE.GridHelper(platformRadius * 2, 20, 0x0000ff, 0x404040);
@@ -82,7 +112,6 @@ export class World {
         gridHelper.material.opacity = 0.3;
         gridHelper.material.transparent = true;
         this.engine.scene.add(gridHelper);
-        this.objects.add(gridHelper);
 
         // Add accent lights around the platform
         const numLights = 6;
@@ -109,10 +138,6 @@ export class World {
         glowRing.rotation.x = -Math.PI / 2;
         glowRing.position.y = 0.02;
         this.engine.scene.add(glowRing);
-        this.objects.add(glowRing);
-
-        // Create holographic room
-        this.createHolographicRoom();
     }
 
     async loadSkybox() {
@@ -151,201 +176,19 @@ export class World {
         }
     }
 
-    createHolographicRoom() {
-        const roomWidth = 5;
-        const roomHeight = 3;
-        const roomDepth = 3;
-        const roomY = 2; // 2 meters above floor level
-
-        // Create grid material with custom shader for holographic effect
-        const gridMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                time: { value: 0 },
-                color: { value: new THREE.Color(0x00ffff) }
-            },
-            vertexShader: `
-                varying vec2 vUv;
-                varying vec3 vPosition;
-                void main() {
-                    vUv = uv;
-                    vPosition = position;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-            `,
-            fragmentShader: `
-                uniform float time;
-                uniform vec3 color;
-                varying vec2 vUv;
-                varying vec3 vPosition;
-                
-                float getGrid(vec2 uv, float size) {
-                    vec2 grid = abs(fract(uv * size) - 0.5) * 2.0;
-                    float lineWidth = 0.05;
-                    vec2 lines = smoothstep(1.0 - lineWidth, 1.0, grid);
-                    return max(lines.x, lines.y) * 0.5;
-                }
-                
-                float getBorder(vec2 uv, float thickness) {
-                    vec2 border = step(thickness, uv) * step(thickness, 1.0 - uv);
-                    return 1.0 - (border.x * border.y);
-                }
-                
-                void main() {
-                    // Create multiple grid layers
-                    float grid1 = getGrid(vUv, 10.0); // Large grid
-                    float grid2 = getGrid(vUv, 50.0) * 0.5; // Fine grid
-                    
-                    // Combine grids
-                    float gridPattern = grid1 + grid2;
-                    
-                    // Add subtle pulse effect
-                    float pulse = sin(time * 2.0) * 0.1 + 0.9;
-                    
-                    // Add distance fade but preserve edges
-                    float edgeFade = 1.0 - max(
-                        abs(vUv.x - 0.5) * 2.0,
-                        abs(vUv.y - 0.5) * 2.0
-                    );
-                    edgeFade = smoothstep(0.0, 0.3, edgeFade);
-                    
-                    // Add sharp border
-                    float border = getBorder(vUv, 0.02);
-                    
-                    // Calculate final alpha
-                    float alpha = (gridPattern * pulse * edgeFade * 0.15) + border * 0.4; // Increased from 0.1 and 0.3
-                    
-                    // Output final color with glow
-                    vec3 glowColor = color + vec3(0.15) * gridPattern + vec3(0.3) * border; // Increased from 0.1 and 0.2
-                    gl_FragColor = vec4(glowColor, alpha);
-                }
-            `,
-            transparent: true,
-            side: THREE.DoubleSide,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending
-        });
-
-        // Store original material properties for AR mode
-        gridMaterial.userData.originalTransparent = gridMaterial.transparent;
-        gridMaterial.userData.originalOpacity = gridMaterial.opacity;
-
-        // Create room faces
-        const faces = [
-            new THREE.PlaneGeometry(roomWidth, roomHeight), // Front
-            new THREE.PlaneGeometry(roomWidth, roomHeight), // Back
-            new THREE.PlaneGeometry(roomWidth, roomDepth),  // Bottom
-            new THREE.PlaneGeometry(roomWidth, roomDepth)   // Top
-        ];
-
-        const positions = [
-            [0, 0, roomDepth/2 + 0.001],           // Front
-            [0, 0, -roomDepth/2 - 0.001],          // Back
-            [0, -roomHeight/2, 0],                 // Bottom
-            [0, roomHeight/2 + 0.001, 0]           // Top
-        ];
-
-        const rotations = [
-            [0, 0, 0],                     // Front
-            [0, Math.PI, 0],               // Back
-            [Math.PI/2, 0, 0],             // Bottom
-            [-Math.PI/2, 0, 0]             // Top
-        ];
-
-        // Create room group
-        const roomGroup = new THREE.Group();
-        roomGroup.position.y = roomY;
-
-        // Create each face with its own material instance
-        faces.forEach((geometry, index) => {
-            const faceMaterial = gridMaterial.clone();
-            const mesh = new THREE.Mesh(geometry, faceMaterial);
-            mesh.position.set(...positions[index]);
-            mesh.rotation.set(...rotations[index]);
-            mesh.renderOrder = index + 1;
-            roomGroup.add(mesh);
-        });
-
-        // Store original material properties for AR mode
-        roomGroup.traverse(child => {
-            if (child.material) {
-                child.userData.originalTransparent = child.material.transparent;
-                child.userData.originalOpacity = child.material.opacity;
-            }
-        });
-
-        // Create edge lines
-        const edges = [
-            // Vertical edges
-            { start: [-roomWidth/2, -roomHeight/2, roomDepth/2], end: [-roomWidth/2, roomHeight/2, roomDepth/2] },
-            { start: [roomWidth/2, -roomHeight/2, roomDepth/2], end: [roomWidth/2, roomHeight/2, roomDepth/2] },
-            { start: [-roomWidth/2, -roomHeight/2, -roomDepth/2], end: [-roomWidth/2, roomHeight/2, -roomDepth/2] },
-            { start: [roomWidth/2, -roomHeight/2, -roomDepth/2], end: [roomWidth/2, roomHeight/2, -roomDepth/2] },
-            
-            // Horizontal edges - Top
-            { start: [-roomWidth/2, roomHeight/2, roomDepth/2], end: [roomWidth/2, roomHeight/2, roomDepth/2] },
-            { start: [-roomWidth/2, roomHeight/2, -roomDepth/2], end: [roomWidth/2, roomHeight/2, -roomDepth/2] },
-            { start: [-roomWidth/2, roomHeight/2, roomDepth/2], end: [-roomWidth/2, roomHeight/2, -roomDepth/2] },
-            { start: [roomWidth/2, roomHeight/2, roomDepth/2], end: [roomWidth/2, roomHeight/2, -roomDepth/2] },
-            
-            // Horizontal edges - Bottom
-            { start: [-roomWidth/2, -roomHeight/2, roomDepth/2], end: [roomWidth/2, -roomHeight/2, roomDepth/2] },
-            { start: [-roomWidth/2, -roomHeight/2, -roomDepth/2], end: [roomWidth/2, -roomHeight/2, -roomDepth/2] },
-            { start: [-roomWidth/2, -roomHeight/2, roomDepth/2], end: [-roomWidth/2, -roomHeight/2, -roomDepth/2] },
-            { start: [roomWidth/2, -roomHeight/2, roomDepth/2], end: [roomWidth/2, -roomHeight/2, -roomDepth/2] }
-        ];
-
-        const edgeMaterial = new THREE.LineBasicMaterial({
-            color: 0x00ffff,
-            transparent: true,
-            opacity: 0.4, // Increased from 0.3
-            blending: THREE.AdditiveBlending
-        });
-
-        edges.forEach(edge => {
-            const geometry = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(...edge.start),
-                new THREE.Vector3(...edge.end)
-            ]);
-            const line = new THREE.Line(geometry, edgeMaterial);
-            line.renderOrder = 2;
-            roomGroup.add(line);
-        });
-
-        this.engine.scene.add(roomGroup);
-        this.holographicRoom = roomGroup;
-
-        // Add animation to update shader time
-        this.engine.animationManager.addAnimation(() => {
-            roomGroup.children.forEach(mesh => {
-                if (mesh.material.uniforms) {
-                    mesh.material.uniforms.time.value = this.clock.getElapsedTime();
-                }
-            });
-        });
-    }
-
     update(deltaTime) {
         if (this.engine.xrSession) {
             // Handle AR mode differently
             if (this.engine.xrMode === 'immersive-ar') {
                 // Adjust camera height in AR mode
                 if (this.engine.camera) {
-                    this.engine.camera.position.y = 3.6; // Raise camera by 3.6 units in AR
+                    this.engine.camera.position.y = 1.0;
                 }
 
-                // Make room semi-transparent in AR but keep it visible
-                if (this.holographicRoom) {
-                    this.holographicRoom.traverse(child => {
-                        if (child.material) {
-                            child.material.transparent = true;
-                            child.material.opacity = 0.7;
-                            child.material.depthWrite = false;
-                            child.material.blending = THREE.AdditiveBlending;
-                            if (child.material.emissive) {
-                                child.material.emissiveIntensity = 0.8;
-                            }
-                        }
-                    });
+                // Make platform and ground semi-transparent in AR
+                if (this.platform) {
+                    this.platform.visible = true;
+                    this.platform.material.opacity = 0.3;
                 }
 
                 // Keep ground visible but make it semi-transparent
@@ -363,20 +206,13 @@ export class World {
                     this.engine.camera.position.y = 0;
                 }
 
-                // Reset visibility for VR mode
-                if (this.holographicRoom) {
-                    this.holographicRoom.traverse(child => {
-                        if (child.material) {
-                            child.material.transparent = child.userData.originalTransparent || false;
-                            child.material.opacity = child.userData.originalOpacity || 1;
-                            child.material.depthWrite = true;
-                            child.material.blending = THREE.NormalBlending;
-                            if (child.material.emissive) {
-                                child.material.emissiveIntensity = 0.15;
-                            }
-                        }
-                    });
+                // Reset platform visibility for VR mode
+                if (this.platform) {
+                    this.platform.visible = true;
+                    this.platform.material.opacity = 0.5;
                 }
+
+                // Reset ground visibility for VR mode
                 if (this.ground) {
                     this.ground.visible = true;
                     if (this.ground.material) {
@@ -386,15 +222,6 @@ export class World {
                     }
                 }
             }
-        }
-
-        // Update shader time for holographic effect
-        if (this.holographicRoom) {
-            this.holographicRoom.children.forEach(child => {
-                if (child.material && child.material.uniforms) {
-                    child.material.uniforms.time.value = this.clock.getElapsedTime();
-                }
-            });
         }
     }
 
@@ -428,13 +255,10 @@ export class World {
             roughness: 0.4,
             metalness: 0.6
         });
-        this.materials.set('ground', groundMaterial);
 
-        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-        ground.rotation.x = -Math.PI / 2;
-        this.engine.scene.add(ground);
-        this.ground = ground;
-        this.objects.add(ground);
+        this.ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        this.ground.rotation.x = -Math.PI / 2;
+        this.engine.scene.add(this.ground);
     }
 
     highlightObject(object, highlight) {
@@ -451,16 +275,7 @@ export class World {
 
     cleanup() {
         // Dispose geometries and materials
-        this.objects.forEach(object => {
-            if (object.geometry) object.geometry.dispose();
-        });
-        
-        this.materials.forEach(material => {
-            material.dispose();
-        });
-        
-        // Clear references
-        this.objects.clear();
-        this.materials.clear();
+        if (this.ground && this.ground.geometry) this.ground.geometry.dispose();
+        if (this.platform && this.platform.geometry) this.platform.geometry.dispose();
     }
 }
