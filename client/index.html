@@ -54,6 +54,29 @@
             border: 1px solid #ddd;
             flex: 2;
         }
+        #xr-buttons {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 1000;
+        }
+        #xr-buttons button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            background: #4CAF50;
+            color: white;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #xr-buttons button:hover {
+            background: #45a049;
+        }
     </style>
 </head>
 <body>
@@ -87,62 +110,6 @@
         }
     }
     </script>
-    <script type="module">
-        import { Engine } from './js/core/Engine.js';
-        
-        async function checkVRSupport() {
-            const vrStatus = document.getElementById('vrStatus');
-            
-            try {
-                if (!navigator.xr) {
-                    throw new Error('WebXR not available');
-                }
-
-                // Check if VR is supported
-                const isSupported = await navigator.xr.isSessionSupported('immersive-vr');
-                if (!isSupported) {
-                    throw new Error('VR not supported');
-                }
-
-                vrStatus.className = 'success';
-                vrStatus.textContent = 'VR Ready - Click "Enter VR" to begin';
-                return true;
-            } catch (err) {
-                console.error('VR Support check failed:', err);
-                vrStatus.className = 'error';
-                vrStatus.textContent = `VR Error: ${err.message}`;
-                return false;
-            }
-        }
-
-        // Start the application
-        async function init() {
-            await checkVRSupport();
-            const engine = new Engine();
-            engine.start();
-
-            // Add error handler for XR session errors
-            window.addEventListener('vrdisplayactivate', () => {
-                console.log('VR Display Activated');
-            });
-
-            window.addEventListener('vrdisplaydeactivate', () => {
-                console.log('VR Display Deactivated');
-            });
-
-            window.addEventListener('vrdisplayconnect', () => {
-                console.log('VR Display Connected');
-                checkVRSupport();
-            });
-
-            window.addEventListener('vrdisplaydisconnect', () => {
-                console.log('VR Display Disconnected');
-                checkVRSupport();
-            });
-        }
-
-        // Initialize when the page loads
-        init().catch(console.error);
-    </script>
+    <script type="module" src="js/main.js?v=1"></script>
 </body>
 </html>

@@ -198,23 +198,42 @@ class ScoreManager {
     }
 
     resetScores() {
-        console.log('[SCORE] Resetting all scores');
-        this.scores.clear();
-        
-        // Reset UI if available
+        // Reset all scores to 0
+        for (const playerId of this.scores.keys()) {
+            this.scores.set(playerId, 0);
+        }
+
+        // Update both 2D and VR UI
+        this.updateScoreDisplay();
         if (this.vrScoreUI) {
-            // Clear all existing score displays
             for (const playerId of this.scores.keys()) {
-                this.vrScoreUI.removePlayer(playerId);
+                this.vrScoreUI.updatePlayerScore(playerId, 0, 0);
             }
         }
 
-        // Network the score reset if we're the host
+        // If we're the host, send score reset message to all clients
         if (this.engine.networkManager?.isHost) {
+            console.log('[SCORE] Host sending score reset to all clients');
             this.engine.networkManager.send({
                 type: 'scoreReset',
                 senderId: this.engine.networkManager.localPlayerId
             });
+        }
+    }
+
+    handleNetworkScoreReset() {
+        console.log('[SCORE] Handling network score reset');
+        // Reset all scores to 0
+        for (const playerId of this.scores.keys()) {
+            this.scores.set(playerId, 0);
+        }
+
+        // Update both 2D and VR UI
+        this.updateScoreDisplay();
+        if (this.vrScoreUI) {
+            for (const playerId of this.scores.keys()) {
+                this.vrScoreUI.updatePlayerScore(playerId, 0, 0);
+            }
         }
     }
 }

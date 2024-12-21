@@ -36,27 +36,20 @@ export class UIManager {
         // Remove any remaining spheres
         if (this.engine.sphereManager) {
             console.log('[GAME_START] Cleaning up remaining spheres');
-            try {
-                const spheres = Array.from(this.engine.sphereManager.spheres.entries());
-                for (const [id, sphere] of spheres) {
-                    this.engine.sphereManager.removeSphere(id);
-                }
-            } catch (error) {
-                console.error('[GAME_START] Error cleaning up spheres:', error);
-            }
+            this.engine.sphereManager.removeAllSpheres();
         }
         
         this.gameStarted = true;
         this.gameStartTime = Date.now();
         
         // Hide start button in VR score UI
-        if (this.engine.scoreManager.vrScoreUI && this.engine.scoreManager.vrScoreUI.startButton) {
+        if (this.engine.vrScoreUI && this.engine.vrScoreUI.startButton) {
             console.log('[GAME_START] Hiding start button');
-            this.engine.scoreManager.vrScoreUI.startButton.visible = false;
+            this.engine.vrScoreUI.startButton.visible = false;
         }
         
         // Send start game event to all players with synchronized time
-        if (this.engine.networkManager) {
+        if (this.engine.networkManager?.isHost) {
             const startData = {
                 startTime: this.gameStartTime,
                 duration: this.gameDuration
@@ -100,70 +93,27 @@ export class UIManager {
     }
 
     handleNetworkGameStart(data) {
-        if (this.gameStarted) {
-            console.log('[NETWORK_GAME_START] Game already started');
-            return;
-        }
+        console.log('[NETWORK] Handling game start:', data);
         
-        console.log('[NETWORK_GAME_START] Received game start event:', data);
-        
-        if (!data.startTime || !data.duration) {
-            console.error('[NETWORK_GAME_START] Invalid game start data:', data);
-            return;
-        }
-
-        // Stop any existing timer
-        this.stopTimer();
-        
-        // Reset scores for network clients too
+        // Reset scores for network game start
         if (this.engine.scoreManager) {
-            console.log('[NETWORK_GAME_START] Resetting scores');
-            this.engine.scoreManager.resetScores();
+            console.log('[NETWORK] Resetting scores for network game');
+            this.engine.scoreManager.handleNetworkScoreReset();
         }
 
-        // Remove any remaining spheres for network clients
-        if (this.engine.sphereManager) {
-            console.log('[NETWORK_GAME_START] Cleaning up remaining spheres');
-            try {
-                const spheres = Array.from(this.engine.sphereManager.spheres.entries());
-                for (const [id, sphere] of spheres) {
-                    this.engine.sphereManager.removeSphere(id);
-                }
-            } catch (error) {
-                console.error('[NETWORK_GAME_START] Error cleaning up spheres:', error);
-            }
-        }
-        
-        // Set game state
         this.gameStarted = true;
         this.gameStartTime = data.startTime;
         this.gameDuration = data.duration;
-        
-        console.log('[NETWORK_GAME_START] Game state set:', {
-            started: this.gameStarted,
-            startTime: this.gameStartTime,
-            duration: this.gameDuration
-        });
-        
-        // Hide start button in VR score UI
-        if (this.engine.scoreManager.vrScoreUI && this.engine.scoreManager.vrScoreUI.startButton) {
-            console.log('[NETWORK_GAME_START] Hiding start button');
-            this.engine.scoreManager.vrScoreUI.startButton.visible = false;
+
+        // Hide start button for all clients
+        if (this.engine.vrScoreUI && this.engine.vrScoreUI.startButton) {
+            this.engine.vrScoreUI.startButton.visible = false;
         }
-        
+
         // Start the game
-        console.log('[NETWORK_GAME_START] Starting game with time:', this.gameStartTime);
         this.startGame();
-        
-        // Force an immediate timer update
         this.updateTimer();
-        
-        // Start the timer interval
-        this.timerInterval = setInterval(() => {
-            this.updateTimer();
-        }, 1000);
-        
-        console.log('[NETWORK_GAME_START] Timer started');
+        this.startTimer();
     }
 
     handleTimerEnd() {

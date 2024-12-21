@@ -107,6 +107,182 @@ export class Engine {
             this.controls.target.set(0, 1.6, 0);
             this.controls.update();
         });
+
+        this.initXR();
+    }
+
+    async initXR() {
+        try {
+            // Add button container if it doesn't exist
+            let buttonContainer = document.getElementById('xr-buttons');
+            if (!buttonContainer) {
+                buttonContainer = document.createElement('div');
+                buttonContainer.id = 'xr-buttons';
+                buttonContainer.style.cssText = `
+                    position: fixed;
+                    bottom: 20px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    display: flex;
+                    gap: 10px;
+                    z-index: 1000;
+                `;
+                document.body.appendChild(buttonContainer);
+            }
+
+            // Check and create VR button
+            const isVRSupported = await navigator.xr.isSessionSupported('immersive-vr');
+            if (isVRSupported) {
+                const vrButton = this.createXRButton('Enter VR', 'immersive-vr');
+                buttonContainer.appendChild(vrButton);
+            }
+
+            // Check and create AR button
+            const isARSupported = await navigator.xr.isSessionSupported('immersive-ar');
+            if (isARSupported) {
+                const arButton = this.createXRButton('Enter AR', 'immersive-ar');
+                buttonContainer.appendChild(arButton);
+            }
+
+        } catch (error) {
+            console.error('Error initializing XR:', error);
+        }
+    }
+
+    async onXRSessionStarted(session, mode) {
+        this.xrSession = session;
+        this.xrMode = mode;
+
+        try {
+            // Make WebGL context XR compatible
+            const gl = this.renderer.getContext();
+            await gl.makeXRCompatible();
+
+            // Create the WebGL layer with alpha for AR
+            const glLayer = new XRWebGLLayer(session, gl, {
+                alpha: true,
+                framebufferScaleFactor: 1.0
+            });
+
+            await session.updateRenderState({ 
+                baseLayer: glLayer,
+                depthFar: 1000,
+                depthNear: 0.1
+            });
+
+            // Set up reference space
+            const referenceSpaceType = mode === 'immersive-ar' ? 'local' : 'local-floor';
+            this.xrRefSpace = await session.requestReferenceSpace(referenceSpaceType);
+
+            // Initialize hit testing for AR
+            if (mode === 'immersive-ar') {
+                await this.initARHitTesting(session);
+                
+                // Configure renderer for AR transparency
+                this.renderer.setClearAlpha(0);
+                this.renderer.setClearColor(0x000000, 0);
+                this.scene.background = null;
+            } else {
+                // Reset for VR mode
+                this.renderer.setClearAlpha(1);
+                this.renderer.setClearColor(0x000000, 1);
+                // You might want to set a skybox or background color for VR
+                this.scene.background = new THREE.Color(0x000000);
+            }
+
+            // Configure renderer for XR
+            this.renderer.xr.setReferenceSpaceType(referenceSpaceType);
+            this.renderer.xr.setSession(session);
+
+        } catch (error) {
+            console.error('Error setting up XR session:', error);
+            session.end();
+        }
+    }
+
+    onXRSessionEnded() {
+        // Reset renderer settings
+        this.renderer.setClearAlpha(1);
+        this.renderer.setClearColor(0x000000, 1);
+        this.scene.background = new THREE.Color(0x000000);
+
+        if (this.hitTestSource) {
+            this.hitTestSource.cancel();
+            this.hitTestSource = null;
+        }
+        this.xrSession = null;
+        this.xrMode = null;
+    }
+
+    createXRButton(buttonText, mode) {
+        const button = document.createElement('button');
+        button.style.cssText = `
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            background: #4CAF50;
+            color: white;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        `;
+        button.textContent = buttonText;
+
+        button.addEventListener('mouseover', () => {
+            button.style.backgroundColor = '#45a049';
+        });
+
+        button.addEventListener('mouseout', () => {
+            button.style.backgroundColor = '#4CAF50';
+        });
+
+        button.addEventListener('click', async () => {
+            try {
+                if (this.xrSession) {
+                    await this.xrSession.end();
+                    return;
+                }
+
+                const sessionInit = {
+                    requiredFeatures: ['local'],
+                    optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
+                };
+
+                // Add AR-specific features
+                if (mode === 'immersive-ar') {
+                    sessionInit.requiredFeatures.push('hit-test');
+                    sessionInit.optionalFeatures.push('light-estimation');
+                    sessionInit.optionalFeatures.push('anchors');
+                    sessionInit.domOverlay = { root: document.body };
+                }
+
+                const session = await navigator.xr.requestSession(mode, sessionInit);
+                await this.onXRSessionStarted(session, mode);
+                button.textContent = `Exit ${mode === 'immersive-vr' ? 'VR' : 'AR'}`;
+                
+                session.addEventListener('end', () => {
+                    button.textContent = buttonText;
+                    this.onXRSessionEnded();
+                });
+            } catch (error) {
+                console.error(`Error starting ${mode} session:`, error);
+            }
+        });
+
+        return button;
+    }
+
+    async initARHitTesting(session) {
+        try {
+            const viewerSpace = await session.requestReferenceSpace('viewer');
+            this.hitTestSource = await session.requestHitTestSource({
+                space: viewerSpace
+            });
+            console.log('Hit testing initialized');
+        } catch (error) {
+            console.error('Error initializing hit testing:', error);
+        }
     }
 
     setupLights() {

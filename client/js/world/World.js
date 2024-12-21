@@ -225,6 +225,10 @@ export class World {
             blending: THREE.AdditiveBlending
         });
 
+        // Store original material properties for AR mode
+        gridMaterial.userData.originalTransparent = gridMaterial.transparent;
+        gridMaterial.userData.originalOpacity = gridMaterial.opacity;
+
         // Create room faces
         const faces = [
             new THREE.PlaneGeometry(roomWidth, roomHeight), // Front
@@ -259,6 +263,14 @@ export class World {
             mesh.rotation.set(...rotations[index]);
             mesh.renderOrder = index + 1;
             roomGroup.add(mesh);
+        });
+
+        // Store original material properties for AR mode
+        roomGroup.traverse(child => {
+            if (child.material) {
+                child.userData.originalTransparent = child.material.transparent;
+                child.userData.originalOpacity = child.material.opacity;
+            }
         });
 
         // Create edge lines
@@ -312,6 +324,71 @@ export class World {
         });
     }
 
+    update(deltaTime) {
+        if (this.engine.xrSession) {
+            // Handle AR mode differently
+            if (this.engine.xrMode === 'immersive-ar') {
+                // Make room semi-transparent in AR but keep it visible
+                if (this.holographicRoom) {
+                    this.holographicRoom.traverse(child => {
+                        if (child.material) {
+                            child.material.transparent = true;
+                            child.material.opacity = 0.7; // Increased opacity to make it more visible
+                            child.material.depthWrite = false; // Ensure proper transparency
+                            child.material.blending = THREE.AdditiveBlending;
+                            // Keep the emissive properties strong for better visibility
+                            if (child.material.emissive) {
+                                child.material.emissiveIntensity = 0.8;
+                            }
+                        }
+                    });
+                }
+
+                // Keep ground visible but make it semi-transparent
+                if (this.ground) {
+                    this.ground.visible = true;
+                    if (this.ground.material) {
+                        this.ground.material.transparent = true;
+                        this.ground.material.opacity = 0.3;
+                        this.ground.material.depthWrite = false;
+                    }
+                }
+            } else {
+                // Reset visibility for VR mode
+                if (this.holographicRoom) {
+                    this.holographicRoom.traverse(child => {
+                        if (child.material) {
+                            child.material.transparent = child.userData.originalTransparent || false;
+                            child.material.opacity = child.userData.originalOpacity || 1;
+                            child.material.depthWrite = true;
+                            child.material.blending = THREE.NormalBlending;
+                            if (child.material.emissive) {
+                                child.material.emissiveIntensity = 0.15;
+                            }
+                        }
+                    });
+                }
+                if (this.ground) {
+                    this.ground.visible = true;
+                    if (this.ground.material) {
+                        this.ground.material.transparent = false;
+                        this.ground.material.opacity = 1;
+                        this.ground.material.depthWrite = true;
+                    }
+                }
+            }
+        }
+
+        // Update shader time for holographic effect
+        if (this.holographicRoom) {
+            this.holographicRoom.children.forEach(child => {
+                if (child.material && child.material.uniforms) {
+                    child.material.uniforms.time.value = this.clock.getElapsedTime();
+                }
+            });
+        }
+    }
+
     createBird() {
         const geometry = new THREE.SphereGeometry(0.2, 32, 32);
         const material = new THREE.MeshStandardMaterial({
@@ -349,10 +426,6 @@ export class World {
         this.engine.scene.add(ground);
         this.ground = ground;
         this.objects.add(ground);
-    }
-
-    update() {
-        // No shader updates needed for GLB model
     }
 
     highlightObject(object, highlight) {
