@@ -554,13 +554,14 @@ export class VRScoreUI {
 
     update() {
         // Only process button interaction if client is host
-        if (this.startButton && !this.engine.uiManager.gameStarted) {
+        if (this.startButton) {
             // Check if client is host
             const isHost = this.engine.networkManager.isHost;
-            this.startButton.visible = isHost;
+            // Only show start button to host when game is not started
+            this.startButton.visible = isHost && !this.engine.uiManager.gameStarted;
 
-            // Only process interactions if client is host
-            if (isHost) {
+            // Only process interactions if client is host and game not started
+            if (isHost && !this.engine.uiManager.gameStarted) {
                 const session = this.engine.renderer.xr.getSession();
                 const raycaster = new THREE.Raycaster();
                 

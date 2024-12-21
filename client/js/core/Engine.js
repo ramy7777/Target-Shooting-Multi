@@ -20,7 +20,9 @@ export class Engine {
         this.scene.background = new THREE.Color(0x404040);
 
         // Create camera
-        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.camera.position.set(0, 0, 0);
+        this.camera.lookAt(0, 0, -1);
         
         // Create camera rig for VR and PC
         this.cameraRig = new THREE.Group();
@@ -172,22 +174,31 @@ export class Engine {
 
             // Set up reference space
             const referenceSpaceType = mode === 'immersive-ar' ? 'local' : 'local-floor';
-            this.xrRefSpace = await session.requestReferenceSpace(referenceSpaceType);
-
-            // Initialize hit testing for AR
+            let refSpace = await session.requestReferenceSpace(referenceSpaceType);
+            
             if (mode === 'immersive-ar') {
-                await this.initARHitTesting(session);
+                // Adjust camera rig position for AR to standard height (1.6m)
+                this.cameraRig.position.y = 1.6;
                 
                 // Configure renderer for AR transparency
                 this.renderer.setClearAlpha(0);
                 this.renderer.setClearColor(0x000000, 0);
                 this.scene.background = null;
             } else {
+                // Reset camera rig for VR mode
+                this.cameraRig.position.y = 0;
+                
                 // Reset for VR mode
                 this.renderer.setClearAlpha(1);
                 this.renderer.setClearColor(0x000000, 1);
-                // You might want to set a skybox or background color for VR
                 this.scene.background = new THREE.Color(0x000000);
+            }
+
+            this.xrRefSpace = refSpace;
+
+            // Initialize hit testing for AR
+            if (mode === 'immersive-ar') {
+                await this.initARHitTesting(session);
             }
 
             // Configure renderer for XR
@@ -201,6 +212,9 @@ export class Engine {
     }
 
     onXRSessionEnded() {
+        // Reset camera rig position
+        this.cameraRig.position.y = 0;
+        
         // Reset renderer settings
         this.renderer.setClearAlpha(1);
         this.renderer.setClearColor(0x000000, 1);

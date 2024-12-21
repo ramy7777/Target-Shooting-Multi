@@ -328,15 +328,19 @@ export class World {
         if (this.engine.xrSession) {
             // Handle AR mode differently
             if (this.engine.xrMode === 'immersive-ar') {
+                // Adjust camera height in AR mode
+                if (this.engine.camera) {
+                    this.engine.camera.position.y = 3.6; // Raise camera by 3.6 units in AR
+                }
+
                 // Make room semi-transparent in AR but keep it visible
                 if (this.holographicRoom) {
                     this.holographicRoom.traverse(child => {
                         if (child.material) {
                             child.material.transparent = true;
-                            child.material.opacity = 0.7; // Increased opacity to make it more visible
-                            child.material.depthWrite = false; // Ensure proper transparency
+                            child.material.opacity = 0.7;
+                            child.material.depthWrite = false;
                             child.material.blending = THREE.AdditiveBlending;
-                            // Keep the emissive properties strong for better visibility
                             if (child.material.emissive) {
                                 child.material.emissiveIntensity = 0.8;
                             }
@@ -354,6 +358,11 @@ export class World {
                     }
                 }
             } else {
+                // Reset camera height for VR mode
+                if (this.engine.camera) {
+                    this.engine.camera.position.y = 0;
+                }
+
                 // Reset visibility for VR mode
                 if (this.holographicRoom) {
                     this.holographicRoom.traverse(child => {

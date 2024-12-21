@@ -180,8 +180,8 @@ export class UIManager {
         
         // Show start button only to host
         if (this.engine.networkManager.isHost) {
-            if (this.engine.vrScoreUI && this.engine.vrScoreUI.startButton) {
-                this.engine.vrScoreUI.startButton.visible = true;
+            if (this.engine.scoreManager.vrScoreUI && this.engine.scoreManager.vrScoreUI.startButton) {
+                this.engine.scoreManager.vrScoreUI.startButton.visible = true;
                 console.log('[UI] Start button shown to host after game end');
             }
         }
@@ -244,7 +244,8 @@ export class UIManager {
         // End game if time is up
         if (remainingTime <= 0) {
             console.log('[TIMER] Time is up');
-            this.handleTimerEnd();
+            this.handleGameEnd();
+            this.stopTimer();
         }
     }
 
