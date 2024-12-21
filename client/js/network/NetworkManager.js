@@ -96,12 +96,9 @@ export class NetworkManager {
             return;
         }
 
-        console.log('[NETWORK] Received message:', data.type, 'from:', data.senderId);
-
         switch (data.type) {
             case 'init':
                 this.localPlayerId = data.id;
-                console.log('[NETWORK] Initialized with ID:', this.localPlayerId);
                 break;
                 
             case 'hostConfirm':
@@ -185,7 +182,6 @@ export class NetworkManager {
 
             case 'sphereSpawned':
                 if (data.senderId !== this.localPlayerId) {
-                    console.debug('[DEBUG] Received sphere spawn message:', data);
                     this.engine.sphereManager.handleNetworkSphereSpawn(data.data, data.senderId);
                 }
                 break;
@@ -207,7 +203,6 @@ export class NetworkManager {
                 break;
 
             case 'gameStart':
-                console.log('[NETWORK] Handling game start message');
                 if (this.engine.uiManager) {
                     this.engine.uiManager.handleNetworkGameStart({
                         startTime: data.data.startTime,
@@ -217,14 +212,12 @@ export class NetworkManager {
                 break;
 
             case 'gameEnd':
-                console.log('[NETWORK] Handling game end message');
                 if (this.engine.uiManager) {
                     this.engine.uiManager.handleNetworkGameEnd();
                 }
                 break;
 
             case 'scoreReset':
-                console.log('[NETWORK] Received score reset from:', data.senderId);
                 if (this.engine.scoreManager) {
                     // Clear scores map
                     const playerIds = Array.from(this.engine.scoreManager.scores.keys());
@@ -257,6 +250,18 @@ export class NetworkManager {
             
             case 'voice_stop':
                 this.engine.voiceManager.handleVoiceStop(data.playerId);
+                break;
+
+            case 'ballSpawned':
+                if (data.senderId !== this.localPlayerId) {
+                    this.engine.world.handleBallSpawn(data.data);
+                }
+                break;
+                
+            case 'ballState':
+                if (data.senderId !== this.localPlayerId) {
+                    this.engine.world.handleBallState(data.data);
+                }
                 break;
 
             case 'error':
@@ -369,23 +374,14 @@ export class NetworkManager {
     }
 
     sendPlayerUpdate() {
-        const player = this.engine.playerManager.localPlayer;
-        if (!this.connected || !this.currentRoom || !player || !player.mesh) return;
-
-        // Get the network update from the player which includes all necessary data
-        const playerData = player.getNetworkUpdate();
+        if (!this.engine.playerManager.localPlayer) return;
         
-        const update = {
+        const update = this.engine.playerManager.localPlayer.getNetworkUpdate();
+        this.send({
             type: 'position',
-            roomCode: this.currentRoom,
-            id: this.localPlayerId,
-            position: playerData.position,
-            headPosition: playerData.headPosition,
-            headRotation: playerData.headRotation,
-            controllers: playerData.controllers
-        };
-        
-        this.send(update);
+            ...update,
+            senderId: this.localPlayerId
+        });
     }
 
     send(data) {
@@ -401,7 +397,6 @@ export class NetworkManager {
         data.senderId = data.senderId || this.localPlayerId;
         
         try {
-            console.log('[NETWORK] Sending message:', data);
             this.ws.send(JSON.stringify(data));
         } catch (error) {
             console.error('[NETWORK] Error sending message:', error);

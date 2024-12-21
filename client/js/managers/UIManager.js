@@ -22,17 +22,13 @@ export class UIManager {
     handleGameStart() {
         if (this.gameStarted) return;
         
-        console.log('[GAME_START] Starting game...');
-        
         // Reset scores before starting new game
         if (this.engine.scoreManager) {
-            console.log('[GAME_START] Resetting scores');
             this.engine.scoreManager.resetScores();
         }
 
         // Remove any remaining spheres
         if (this.engine.sphereManager) {
-            console.log('[GAME_START] Cleaning up remaining spheres');
             this.engine.sphereManager.removeAllSpheres();
         }
         
@@ -41,16 +37,12 @@ export class UIManager {
         this.gameStartTime = Date.now();
         
         // Start the ball
-        console.log('[GAME_START] Starting ball');
         if (this.engine.world) {
             this.engine.world.startGame();
-        } else {
-            console.error('[GAME_START] World not found!');
         }
         
         // Hide start button in VR score UI
         if (this.engine.vrScoreUI && this.engine.vrScoreUI.startButton) {
-            console.log('[GAME_START] Hiding start button');
             this.engine.vrScoreUI.startButton.visible = false;
         }
         
@@ -63,7 +55,6 @@ export class UIManager {
                 startTime: this.gameStartTime,
                 duration: this.gameDuration
             };
-            console.log('[GAME_START] Sending start game event to network:', startData);
             this.engine.networkManager.send({
                 type: 'gameStart',
                 data: startData,
@@ -72,7 +63,6 @@ export class UIManager {
         }
 
         // Start the game locally
-        console.log('[GAME_START] Starting local game');
         this.startGame();
         this.updateTimer(); // Update timer immediately
     }
@@ -86,9 +76,7 @@ export class UIManager {
     }
 
     startTimer() {
-        console.log('[TIMER] Starting timer, game start time:', this.gameStartTime);
         if (this.timerInterval) {
-            console.log('[TIMER] Clearing existing timer interval');
             clearInterval(this.timerInterval);
         }
         
@@ -116,6 +104,11 @@ export class UIManager {
         // Hide start button for all clients
         if (this.engine.vrScoreUI && this.engine.vrScoreUI.startButton) {
             this.engine.vrScoreUI.startButton.visible = false;
+        }
+
+        // Start the game and spawn ball for clients
+        if (this.engine.world) {
+            this.engine.world.startGame();
         }
 
         // Start the game
@@ -178,7 +171,6 @@ export class UIManager {
     }
 
     handleGameEnd() {
-        console.log('[GAME_END] Ending game');
         // Clear timer interval
         this.stopTimer();
         
@@ -188,9 +180,8 @@ export class UIManager {
         
         // Show start button only to host
         if (this.engine.networkManager.isHost) {
-            if (this.engine.scoreManager.vrScoreUI && this.engine.scoreManager.vrScoreUI.startButton) {
+            if (this.engine.scoreManager.vrScoreUI?.startButton) {
                 this.engine.scoreManager.vrScoreUI.startButton.visible = true;
-                console.log('[UI] Start button shown to host after game end');
             }
         }
         
@@ -219,21 +210,11 @@ export class UIManager {
     }
 
     updateTimer() {
-        if (!this.gameStarted || !this.gameStartTime) {
-            console.log('[TIMER] Game not started or no start time. Started:', this.gameStarted, 'Start time:', this.gameStartTime);
-            return;
-        }
+        if (!this.gameStarted || !this.gameStartTime) return;
         
         const currentTime = Date.now();
         const elapsedTime = currentTime - this.gameStartTime;
         const remainingTime = Math.max(0, this.gameDuration - elapsedTime);
-        
-        console.log('[TIMER] Timer state:', {
-            currentTime,
-            gameStartTime: this.gameStartTime,
-            elapsedTime,
-            remainingTime
-        });
         
         // Convert to seconds and format
         const seconds = Math.ceil(remainingTime / 1000);
@@ -242,16 +223,12 @@ export class UIManager {
         const timeText = `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
         
         // Update VRScoreUI timer display
-        if (this.engine.scoreManager && this.engine.scoreManager.vrScoreUI) {
-            console.log('[TIMER] Updating timer display:', timeText);
+        if (this.engine.scoreManager?.vrScoreUI) {
             this.engine.scoreManager.vrScoreUI.updateTimer(timeText);
-        } else {
-            console.error('[TIMER] VRScoreUI not found');
         }
         
         // End game if time is up
         if (remainingTime <= 0) {
-            console.log('[TIMER] Time is up');
             this.handleGameEnd();
             this.stopTimer();
         }
@@ -259,7 +236,6 @@ export class UIManager {
 
     stopTimer() {
         if (this.timerInterval) {
-            console.log('[TIMER] Stopping timer');
             clearInterval(this.timerInterval);
             this.timerInterval = null;
         }

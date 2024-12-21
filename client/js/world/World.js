@@ -13,6 +13,7 @@ export class World {
         this.ball = null;
         this.leftPaddle = null;
         this.rightPaddle = null;
+        this.ballSyncInterval = null;
         this.setupGround();
         this.setupPlatform();
         this.setupPaddles();
@@ -157,7 +158,6 @@ export class World {
 
     async loadSkybox() {
         try {
-            console.log('[WORLD] Loading skybox...');
             const loader = new EXRLoader();
             const texture = await loader.loadAsync('/assets/textures/skybox/overcast_soil_puresky_1k.exr');
             
@@ -184,80 +184,142 @@ export class World {
             
             texture.dispose();
             pmremGenerator.dispose();
-            
-            console.log('[WORLD] Skybox loaded successfully');
         } catch (error) {
             console.error('[WORLD] Error loading skybox:', error);
         }
     }
 
     startGame() {
-        console.log('[WORLD] Starting game, creating ball');
-        // Create new ball if it doesn't exist
         if (!this.ball) {
-            console.log('[WORLD] Creating new ball');
             this.ball = new Ball(this.engine);
-        } else {
-            console.log('[WORLD] Resetting existing ball');
             this.ball.reset();
+            
+            // Add ball to scene
+            this.engine.scene.add(this.ball.mesh);
+            
+            // Only host broadcasts ball spawn
+            if (this.engine.networkManager?.isHost) {
+                const spawnData = {
+                    position: this.ball.mesh.position.toArray(),
+                    direction: this.ball.direction.toArray(),
+                    speed: this.ball.speed
+                };
+                this.engine.networkManager.send({
+                    type: 'ballSpawned',
+                    data: spawnData,
+                    senderId: this.engine.networkManager.localPlayerId
+                });
+            }
         }
+    }
+
+    handleBallSpawn(data) {
+        if (!this.ball) {
+            this.ball = new Ball(this.engine);
+            
+            // Set ball properties
+            this.ball.mesh.position.fromArray(data.position);
+            this.ball.direction.fromArray(data.direction);
+            this.ball.speed = data.speed;
+            
+            // Add ball to scene
+            this.engine.scene.add(this.ball.mesh);
+        }
+    }
+
+    handleBallState(data) {
+        if (!this.ball) return;
+        this.ball.mesh.position.fromArray(data.position);
+        this.ball.direction.fromArray(data.direction);
+        this.ball.speed = data.speed;
     }
 
     update(deltaTime) {
         if (this.engine.xrSession) {
-            // Handle AR mode differently
-            if (this.engine.xrMode === 'immersive-ar') {
-                // Adjust camera height in AR mode
-                if (this.engine.camera) {
-                    this.engine.camera.position.y = 1.0;
-                }
-
-                // Make platform visible but semi-transparent in AR
-                if (this.platform) {
-                    this.platform.visible = true;
-                    this.platform.material.opacity = 0.3;
-                }
-
-                // Hide ground in AR mode
-                if (this.ground) {
-                    this.ground.visible = false;
-                }
-            } else {
-                // Reset camera height for VR mode
-                if (this.engine.camera) {
-                    this.engine.camera.position.y = 0;
-                }
-
-                // Reset platform visibility for VR mode
-                if (this.platform) {
-                    this.platform.visible = true;
-                    this.platform.material.opacity = 0.5;
-                }
-
-                // Show ground in VR mode
-                if (this.ground) {
-                    this.ground.visible = true;
-                    if (this.ground.material) {
-                        this.ground.material.transparent = false;
-                        this.ground.material.opacity = 1;
-                        this.ground.material.depthWrite = true;
-                    }
-                }
-            }
+            this.handleARMode();
+        } else {
+            this.handleNonARMode();
         }
 
-        // Update paddles
-        if (this.leftPaddle) this.leftPaddle.update();
-        if (this.rightPaddle) this.rightPaddle.update();
-
-        // Update ball and check paddle collisions
+        // Update ball if it exists
         if (this.ball) {
             // Check paddle collisions before updating ball position
             if (this.leftPaddle) this.leftPaddle.checkBallCollision(this.ball);
             if (this.rightPaddle) this.rightPaddle.checkBallCollision(this.ball);
             
-            // Update ball position
-            this.ball.update(deltaTime);
+            // Only host updates ball physics
+            if (this.engine.networkManager?.isHost) {
+                this.ball.update(deltaTime);
+                this.sendBallUpdate();
+            }
+        }
+
+        // Update paddles
+        if (this.leftPaddle) this.leftPaddle.update(deltaTime);
+        if (this.rightPaddle) this.rightPaddle.update(deltaTime);
+    }
+
+    sendBallUpdate() {
+        if (!this.ball || !this.engine.networkManager) return;
+        
+        this.engine.networkManager.send({
+            type: 'ballState',
+            data: {
+                position: this.ball.mesh.position.toArray(),
+                direction: this.ball.direction.toArray(),
+                speed: this.ball.speed
+            },
+            senderId: this.engine.networkManager.localPlayerId
+        });
+    }
+
+    handleBallState(data) {
+        if (!this.ball) return;
+        
+        // Update ball state from network data
+        this.ball.mesh.position.fromArray(data.position);
+        this.ball.direction.fromArray(data.direction);
+        this.ball.speed = data.speed;
+    }
+
+    handleARMode() {
+        // Adjust camera height in AR mode
+        if (this.engine.camera) {
+            this.engine.camera.position.y = 1.0;
+        }
+
+        // Make platform visible but semi-transparent in AR
+        if (this.platform) {
+            this.platform.visible = true;
+            this.platform.material.opacity = 0.3;
+        }
+
+        // Hide ground in AR mode
+        if (this.ground) {
+            this.ground.visible = false;
+        }
+    }
+
+    handleNonARMode() {
+        // Reset camera height for VR mode
+        if (this.engine.camera) {
+            this.engine.camera.position.y = 0;
+        }
+
+        // Reset platform visibility for VR mode
+        if (this.platform) {
+            this.platform.visible = true;
+            this.platform.material.opacity = 0.5;
+        }
+
+        // Show ground in VR mode
+        if (this.ground) {
+            this.ground.visible = true;
+            if (this.ground.material) {
+                this.ground.material.transparent = false;
+                this.ground.material.opacity = 1;
+                this.ground.material.depthWrite = true;
+            }
         }
     }
 
@@ -310,6 +372,7 @@ export class World {
     }
 
     cleanup() {
+        this.stopBallSync();
         // Dispose geometries and materials
         if (this.ground && this.ground.geometry) this.ground.geometry.dispose();
         if (this.platform && this.platform.geometry) this.platform.geometry.dispose();

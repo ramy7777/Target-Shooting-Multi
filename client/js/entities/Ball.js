@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 
 export class Ball {
-    constructor(engine) {
+    constructor(engine, id = 'pongBall') {
         this.engine = engine;
-        this.speed = 2; // Constant speed
+        this.id = id;
+        this.speed = 0.5; // Reduced from 2 to 0.5 for slower movement
         this.direction = new THREE.Vector3(1, 0, 0);
         this.velocity = new THREE.Vector3();
+        this.lastUpdateTime = Date.now();
         
         // Create ball mesh with reduced size (0.1 / 4 = 0.025)
         const geometry = new THREE.SphereGeometry(0.025, 32, 32);
@@ -18,31 +20,40 @@ export class Ball {
         
         this.mesh = new THREE.Mesh(geometry, material);
         this.mesh.position.set(0, 0.675, 0); // Platform height (0.65) plus ball radius (0.025)
-        this.engine.scene.add(this.mesh);
         
         // Initialize position at platform center
         this.reset();
     }
 
+    getState() {
+        return {
+            id: this.id,
+            position: this.mesh.position.toArray(),
+            direction: this.direction.toArray(),
+            speed: this.speed,
+            timestamp: Date.now()
+        };
+    }
+
+    setState(state) {
+        if (!state) return;
+        
+        // Update position
+        this.mesh.position.fromArray(state.position);
+        this.direction.fromArray(state.direction);
+        this.speed = state.speed;
+        this.lastUpdateTime = state.timestamp;
+    }
+
     reset() {
         // Reset ball to center of platform
         this.mesh.position.set(0, 0.675, 0);
-        
-        // Random initial direction
-        const angle = (Math.random() * Math.PI / 2) - Math.PI / 4; // -45 to 45 degrees
-        this.direction.set(Math.cos(angle), 0, Math.sin(angle));
-        this.direction.normalize();
-        
-        // Reset speed
-        this.speed = 2;
+        this.direction.set(1, 0, 0);
+        this.speed = 0.5;
     }
 
     update(deltaTime) {
         if (!deltaTime) return; // Skip if no deltaTime provided
-        
-        console.log('[BALL] Current position:', this.mesh.position.toArray());
-        console.log('[BALL] Current direction:', this.direction.toArray());
-        console.log('[BALL] Current speed:', this.speed);
         
         // Update velocity based on direction and constant speed
         this.velocity.copy(this.direction).multiplyScalar(this.speed * deltaTime);
@@ -55,7 +66,6 @@ export class Ball {
         
         // Only check for collisions with top/bottom edges
         if (Math.abs(this.mesh.position.z) > platformWidth / 2) {
-            console.log('[BALL] Z collision');
             // Reverse z direction
             this.direction.z *= -1;
             // Move ball back inside bounds
@@ -65,7 +75,6 @@ export class Ball {
         // Check if ball is out of bounds (past paddles)
         const platformLength = 2.145;
         if (Math.abs(this.mesh.position.x) > platformLength / 2 + 0.1) {
-            console.log('[BALL] X collision');
             // Reset ball if it goes past paddles
             this.reset();
         }

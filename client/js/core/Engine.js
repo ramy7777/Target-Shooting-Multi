@@ -64,11 +64,7 @@ export class Engine {
         this.networkManager = new NetworkManager(this);
         
         // Initialize network connection
-        this.networkManager.connect().then(() => {
-            console.log('[ENGINE] Successfully connected to server');
-        }).catch(error => {
-            console.error('[ENGINE] Failed to connect to server:', error);
-        });
+        this.networkManager.connect();
         
         this.scoreManager = new ScoreManager(this);
         this.uiManager = new UIManager(this);
@@ -329,7 +325,6 @@ export class Engine {
 
         // Update world if it exists
         if (this.world) {
-            console.log('[ENGINE] Updating world');
             this.world.update(delta);
         }
         

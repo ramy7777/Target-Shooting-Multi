@@ -20,7 +20,6 @@ export class VRScoreUI {
         // Add click handler for mouse input
         document.addEventListener('click', (event) => {
             if (!this.engine.uiManager.gameStarted && this.startButton) {
-                console.log('[UI] Click event received');
                 const mouse = new THREE.Vector2(
                     (event.clientX / window.innerWidth) * 2 - 1,
                     -(event.clientY / window.innerHeight) * 2 + 1
@@ -30,10 +29,8 @@ export class VRScoreUI {
                 raycaster.setFromCamera(mouse, this.engine.camera);
                 
                 const intersects = raycaster.intersectObject(this.startButton, true);
-                console.log('[UI] Click intersections:', intersects.length);
                 
                 if (intersects.length > 0) {
-                    console.log('[UI] Start button clicked directly');
                     this.startButton.material = this.startButton.userData.materials.pressed;
                     this.engine.uiManager.handleGameStart();
                 }
@@ -194,7 +191,6 @@ export class VRScoreUI {
 
         // Create timer display first
         await this.createTimerDisplay();
-        console.log('[UI] Timer display created');
 
         // Add title with enhanced styling
         if (this.font) {
@@ -239,12 +235,10 @@ export class VRScoreUI {
 
         // Create start button
         await this.createStartButton();
-        console.log('[UI] Start button created');
 
         // Add to scene
         this.engine.scene.add(this.scoreGroup);
         this.engine.scene.add(this.playerTagsGroup);
-        console.log('[UI] Added UI elements to scene');
         
         // Start animation loop for glow effect
         const animate = () => {
@@ -639,10 +633,7 @@ export class VRScoreUI {
     }
 
     updateTimer(timeText) {
-        if (!this.timerMesh) {
-            console.warn('[UI] Timer mesh not initialized');
-            return;
-        }
+        if (!this.timerMesh) return;
         
         // Create timer text
         const timerGeometry = new TextGeometry(timeText, {
@@ -681,7 +672,5 @@ export class VRScoreUI {
         timerGeometry.computeBoundingBox();
         const centerOffset = -(timerGeometry.boundingBox.max.x - timerGeometry.boundingBox.min.x) / 2;
         this.timerMesh.position.set(centerOffset, -2.8, 0.01);
-        
-        console.log('[UI] Timer updated to:', timeText);
     }
 }

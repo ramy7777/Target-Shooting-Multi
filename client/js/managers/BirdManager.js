@@ -51,7 +51,8 @@ export class BirdManager {
 
         // Update all birds
         for (const [id, bird] of this.birds) {
-            if (bird.update(delta)) {
+            bird.update(delta);
+            if (bird.isDead) {
                 this.removeBird(id);
             }
         }
@@ -197,7 +198,6 @@ export class BirdManager {
     }
 
     handleNetworkBirdSpawn(data) {
-        console.debug('[DEBUG] Handling network bird spawn:', data);
         const position = new THREE.Vector3().fromArray(data.position);
         const direction = new THREE.Vector3().fromArray(data.direction);
 

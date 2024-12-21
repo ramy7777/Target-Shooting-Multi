@@ -321,14 +321,14 @@ export class Player {
     }
 
     onControllerSelect(controller) {
-        console.log('Controller select:', controller.index);
+        // Handle controller select
     }
 
     onControllerDeselect(controller) {
-        console.log('Controller deselect:', controller.index);
+        // Handle controller deselect
     }
 
     onMouseInteraction(interaction, isDown) {
-        console.log('Mouse interaction:', isDown ? 'down' : 'up', interaction);
+        // Handle mouse interaction
     }
 }
