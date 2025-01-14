@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Loading Test</title>
+</head>
+<body>
+    <div id="status">Testing module loading...</div>
+    <script type="module">
+        console.log('Script starting...');
+        
+        try {
+            const module = await import('./js/main.js');
+            console.log('Main module loaded successfully');
+            document.getElementById('status').textContent = 'Main module loaded successfully';
+        } catch (error) {
+            console.error('Failed to load module:', error);
+            document.getElementById('status').textContent = 'Error: ' + error.message;
+        }
+    </script>
+</body>
+</html> 

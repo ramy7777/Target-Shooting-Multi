@@ -14,8 +14,10 @@ export class NetworkManager {
         this.currentRoom = null; // Track current room
         this.isHost = false; // Track if this client is the host
         this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = 5;
+        this.maxReconnectAttempts = 10; // Increased from 5
         this.reconnectDelay = 1000; // Start with 1 second delay
+        this.heartbeatInterval = null;
+        this.lastHeartbeat = Date.now();
     }
 
     async connect() {
@@ -34,18 +36,22 @@ export class NetworkManager {
                     this.connected = true;
                     this.reconnectAttempts = 0;
                     this.reconnectDelay = 1000;
+                    this.startHeartbeat();
                     if (this.onConnect) {
                         this.onConnect();
                     }
                     resolve();
                 };
                 
-                this.ws.onclose = () => {
-                    console.log('[NETWORK] Connection closed');
+                this.ws.onclose = (event) => {
+                    console.log('[NETWORK] Connection closed:', event.code, event.reason);
                     this.connected = false;
+                    this.stopHeartbeat();
                     this.currentRoom = null; // Clear room on disconnect
                     this.clearPlayers(); // Clear all players on disconnect
-                    this.attemptReconnect();
+                    if (!event.wasClean) {
+                        this.attemptReconnect();
+                    }
                 };
                 
                 this.ws.onerror = (error) => {
@@ -60,6 +66,30 @@ export class NetworkManager {
                 reject(error);
             }
         });
+    }
+
+    startHeartbeat() {
+        this.stopHeartbeat(); // Clear any existing interval
+        this.heartbeatInterval = setInterval(() => {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                this.send({ type: 'heartbeat' });
+                
+                // Check if we haven't received a heartbeat response in too long
+                const now = Date.now();
+                if (now - this.lastHeartbeat > 10000) { // 10 seconds
+                    console.warn('[NETWORK] No heartbeat received in 10s, reconnecting...');
+                    this.ws.close();
+                    this.attemptReconnect();
+                }
+            }
+        }, 5000); // Send heartbeat every 5 seconds
+    }
+
+    stopHeartbeat() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
     }
 
     disconnect() {
@@ -91,6 +121,13 @@ export class NetworkManager {
 
     handleMessage(message) {
         const data = JSON.parse(message.data);
+        
+        // Handle heartbeat response
+        if (data.type === 'heartbeat') {
+            this.lastHeartbeat = Date.now();
+            return;
+        }
+
         console.log('[NETWORK] Received message:', data);
 
         // Don't process our own messages
@@ -269,9 +306,9 @@ export class NetworkManager {
 
             case 'timerSync':
                 if (!this.isHost) {
-                    // Only process timer syncs if game is fully initialized
-                    if (!this.engine.uiManager.gameStarted || !this.engine.uiManager.timerInterval) {
-                        console.log('[NETWORK] Ignoring timer sync - game not fully started');
+                    // Process timer syncs as long as we have a UI manager
+                    if (!this.engine.uiManager) {
+                        console.log('[NETWORK] Ignoring timer sync - UI manager not initialized');
                         return;
                     }
                     if (!data.data || !data.data.gameTime) {
@@ -446,20 +483,23 @@ export class NetworkManager {
         }
     }
 
-    attemptReconnect() {
+    async attemptReconnect() {
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
             console.error('[NETWORK] Max reconnection attempts reached');
             return;
         }
 
         console.log(`[NETWORK] Attempting to reconnect (${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
-        setTimeout(() => {
-            this.reconnectAttempts++;
-            this.connect().catch(error => {
-                console.error('[NETWORK] Reconnection attempt failed:', error);
-                // Exponential backoff
-                this.reconnectDelay = Math.min(this.reconnectDelay * 2, 10000);
-            });
-        }, this.reconnectDelay);
+        this.reconnectAttempts++;
+
+        try {
+            await new Promise(resolve => setTimeout(resolve, this.reconnectDelay));
+            await this.connect();
+            console.log('[NETWORK] Reconnected successfully');
+        } catch (error) {
+            console.error('[NETWORK] Reconnection attempt failed:', error);
+            this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, 10000); // Exponential backoff, max 10s
+            this.attemptReconnect();
+        }
     }
 }

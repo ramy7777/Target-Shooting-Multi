@@ -45,7 +45,37 @@ const rooms = new Map(); // roomCode -> Set of clients
 const clients = new Map(); // ws -> { id, roomCode, isHost }
 let nextClientId = 1;
 
+// Heartbeat interval (ms)
+const HEARTBEAT_INTERVAL = 5000;
+const HEARTBEAT_TIMEOUT = 10000;
+
+function noop() {}
+
+function heartbeat() {
+    this.isAlive = true;
+}
+
+const interval = setInterval(function ping() {
+    wss.clients.forEach(function each(ws) {
+        if (ws.isAlive === false) {
+            const client = clients.get(ws);
+            console.log(`Client ${client ? client.id : 'unknown'} timed out`);
+            return ws.terminate();
+        }
+        
+        ws.isAlive = false;
+        ws.ping(noop);
+    });
+}, HEARTBEAT_INTERVAL);
+
+wss.on('close', function close() {
+    clearInterval(interval);
+});
+
 wss.on('connection', (ws) => {
+    ws.isAlive = true;
+    ws.on('pong', heartbeat);
+
     const clientId = nextClientId++;
     clients.set(ws, { id: clientId, roomCode: null, isHost: false });
     console.log(`Client ${clientId} connected`);
@@ -60,6 +90,12 @@ wss.on('connection', (ws) => {
         try {
             const data = JSON.parse(message);
             const client = clients.get(ws);
+
+            // Handle heartbeat messages
+            if (data.type === 'heartbeat') {
+                ws.send(JSON.stringify({ type: 'heartbeat' }));
+                return;
+            }
 
             switch (data.type) {
                 case 'host':

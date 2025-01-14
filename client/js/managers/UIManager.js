@@ -150,36 +150,31 @@ export class UIManager {
     }
 
     handleTimerSync(data) {
-        if (!this.gameStarted) {
-            console.log('[UI] Ignoring timer sync - game not started');
-            return;
-        }
-
-        // Give a short grace period for timer initialization
-        if (!this.timerInterval) {
-            setTimeout(() => {
-                if (this.gameStarted && !this.timerInterval) {
-                    console.log('[UI] Starting timer after sync');
-                    this.startTimer();
-                }
-            }, 100);
-            return;
-        }
-
         const { currentTime, gameStartTime, gameDuration, gameTime } = data;
         
-        // Update game start time and duration
-        this.gameStartTime = gameStartTime;
-        this.gameDuration = gameDuration;
-        
+        // Update game state if not already started
+        if (!this.gameStarted) {
+            console.log('[UI] Starting game from timer sync');
+            this.gameStarted = true;
+            this.gameStartTime = gameStartTime;
+            this.gameDuration = gameDuration;
+        }
+
         // Calculate time difference between host and client
         const timeDiff = Date.now() - currentTime;
         
         // Adjust game start time by the time difference
-        this.gameStartTime += timeDiff;
+        this.gameStartTime = gameStartTime + timeDiff;
         
         console.log('[UI] Timer synced - Game time:', gameTime, 's');
-        this.updateTimer();
+        
+        // Start timer if not running
+        if (!this.timerInterval) {
+            console.log('[UI] Starting timer from sync');
+            this.startTimer();
+        } else {
+            this.updateTimer();
+        }
     }
 
     handleGameEnd() {
