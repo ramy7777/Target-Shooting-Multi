@@ -176,14 +176,7 @@ export class VRScoreUI {
             console.log('[UI] Client - skipping start button creation');
         }
         
-        // Start animation loop for glow effect
-        const animate = () => {
-            if (glowMaterial) {
-                glowMaterial.uniforms.time.value = performance.now() * 0.001;
-            }
-            requestAnimationFrame(animate);
-        };
-        animate();
+        console.log('[UI] UI initialization complete');
     }
 
     async createTimerDisplay() {
@@ -356,15 +349,6 @@ export class VRScoreUI {
 
         // Add to scoreGroup
         this.scoreGroup.add(this.startButton);
-
-        // Start glow animation
-        const animate = () => {
-            if (glowMaterial && !this.engine.uiManager.gameStarted) {
-                glowMaterial.uniforms.time.value = performance.now() * 0.001;
-            }
-            requestAnimationFrame(animate);
-        };
-        animate();
     }
 
     updatePlayerScore(playerId, score, rank) {

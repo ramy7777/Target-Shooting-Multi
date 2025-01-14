@@ -9,6 +9,7 @@ export class World {
         this.clock = new THREE.Clock();
         this.materials = new Map(); // Store reusable materials
         this.gltfLoader = new GLTFLoader(); // Add GLTFLoader instance
+        this.roomAnimations = []; // Store room animations
         this.setupEnvironment();
     }
 
@@ -313,8 +314,8 @@ export class World {
         this.engine.scene.add(roomGroup);
         this.holographicRoom = roomGroup;
 
-        // Add animation to update shader time
-        this.engine.animationManager.addAnimation(() => {
+        // Store animation function for update method
+        this.roomAnimations.push(() => {
             roomGroup.children.forEach(mesh => {
                 if (mesh.material.uniforms) {
                     mesh.material.uniforms.time.value = this.clock.getElapsedTime();
@@ -363,7 +364,10 @@ export class World {
     }
 
     update() {
-        // No shader updates needed for GLB model
+        // Update all room animations
+        if (this.roomAnimations.length > 0) {
+            this.roomAnimations.forEach(animation => animation());
+        }
     }
 
     highlightObject(object, highlight) {
