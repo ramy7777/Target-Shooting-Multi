@@ -76,6 +76,10 @@ export class InputManager {
             left: false,
             right: false
         };
+
+        // Mouse shooting properties
+        this.mouseClickCooldown = 250; // 250ms cooldown between shots
+        this.lastMouseClick = 0;
     }
 
     initializeControllers() {
@@ -337,27 +341,45 @@ export class InputManager {
     }
 
     handlePCShoot() {
+        // Only allow shooting if not in VR mode
+        if (this.engine.renderer.xr.isPresenting) {
+            return;
+        }
+
         const now = Date.now();
         if (now - this.lastMouseClick < this.mouseClickCooldown) {
             return; // Still in cooldown
         }
         this.lastMouseClick = now;
 
-        // Create bullet from camera position and direction
+        // Convert mouse position to normalized device coordinates (-1 to +1)
+        const rect = this.engine.renderer.domElement.getBoundingClientRect();
+        const x = ((this.mouse.x - rect.left) / rect.width) * 2 - 1;
+        const y = -((this.mouse.y - rect.top) / rect.height) * 2 + 1;
+
+        // Update the picking ray with the camera and mouse position
+        this.raycaster.setFromCamera(new THREE.Vector2(x, y), this.engine.camera);
+
+        // Get bullet start position (camera position)
         const position = new THREE.Vector3();
-        const direction = new THREE.Vector3(0, 0, -1);
-        
-        // Get camera position and direction
         this.engine.camera.getWorldPosition(position);
-        direction.applyQuaternion(this.engine.camera.quaternion);
+
+        // Get bullet direction from raycaster
+        const direction = this.raycaster.ray.direction;
 
         // Offset bullet spawn position slightly forward to avoid self-collision
         const spawnOffset = direction.clone().multiplyScalar(0.5);
         position.add(spawnOffset);
         
-        // Create bullet through BulletManager
+        // Create bullet through BulletManager with same speed as VR bullets
         if (this.engine.bulletManager) {
-            this.engine.bulletManager.createBullet(position, direction);
+            console.debug('[DEBUG] PC Shooting bullet:', { 
+                mousePos: { x: this.mouse.x, y: this.mouse.y },
+                normalized: { x, y },
+                position: position.toArray(), 
+                direction: direction.toArray() 
+            });
+            this.engine.bulletManager.createBullet(position, direction, 0.21);
         }
     }
 
