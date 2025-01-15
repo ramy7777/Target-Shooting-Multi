@@ -198,6 +198,11 @@ export class UIManager {
                 this.engine.birdManager.removeBird(id);
             });
         }
+
+        // Reset all scores
+        if (this.engine.scoreManager) {
+            this.engine.scoreManager.resetAllScores();
+        }
         
         // Send game end event if we're the host
         if (this.engine.networkManager?.isHost) {
@@ -209,6 +214,10 @@ export class UIManager {
     }
 
     handleNetworkGameEnd() {
+        console.log('[GAME_END] Handling network game end');
+        // Stop timer
+        this.stopTimer();
+        
         // Reset game state
         this.gameStarted = false;
         this.gameStartTime = 0;
@@ -223,6 +232,21 @@ export class UIManager {
             this.engine.birdManager.isSpawning = false;
             this.engine.birdManager.birds.forEach((bird, id) => {
                 this.engine.birdManager.removeBird(id);
+            });
+        }
+
+        // Reset all scores
+        if (this.engine.scoreManager) {
+            this.engine.scoreManager.resetAllScores();
+        }
+
+        // Send confirmation back to host
+        if (this.engine.networkManager && !this.engine.networkManager.isHost) {
+            this.engine.networkManager.send({
+                type: 'gameEndConfirm',
+                data: {
+                    timestamp: Date.now()
+                }
             });
         }
     }
@@ -264,8 +288,29 @@ export class UIManager {
             if (this.engine.networkManager?.isHost) {
                 this.handleGameEnd();
             } else {
-                // For non-host clients, just stop the timer
+                // For non-host clients, handle local cleanup
+                console.log('[TIMER] Non-host client handling game end locally');
                 this.stopTimer();
+                this.gameStarted = false;
+                this.gameStartTime = 0;
+
+                // Show start button in VR score UI
+                if (this.engine.scoreManager.vrScoreUI && this.engine.scoreManager.vrScoreUI.startButton) {
+                    this.engine.scoreManager.vrScoreUI.startButton.visible = true;
+                }
+
+                // Stop bird spawning and remove all birds
+                if (this.engine.birdManager) {
+                    this.engine.birdManager.isSpawning = false;
+                    this.engine.birdManager.birds.forEach((bird, id) => {
+                        this.engine.birdManager.removeBird(id);
+                    });
+                }
+
+                // Reset scores locally
+                if (this.engine.scoreManager) {
+                    this.engine.scoreManager.resetAllScores();
+                }
             }
         }
     }
