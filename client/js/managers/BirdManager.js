@@ -123,103 +123,143 @@ export class BirdManager {
     }
 
     handleBulletCollision(bullet) {
-        // Check collision with each bird
-        const bulletVelocity = bullet.velocity.clone();
-        const bulletPath = new THREE.Line3(
-            bullet.position.clone().sub(bulletVelocity), // Previous position
-            bullet.position.clone() // Current position
-        );
+        try {
+            if (!bullet || !bullet.position || !bullet.velocity) {
+                console.error('[BIRD] Invalid bullet data for collision check');
+                return false;
+            }
 
-        for (const [id, bird] of this.birds) {
-            const birdSphere = new THREE.Sphere(bird.position, 0.075);
-            
-            // Check if bullet's path intersects with the sphere
-            const intersection = this.checkBulletSpherePath(bulletPath, birdSphere);
-            
-            if (intersection) {
-                // Get the bird's position for the explosion effect
-                const explosionPosition = bird.position.clone();
+            // Check collision with each bird
+            const bulletVelocity = bullet.velocity.clone();
+            const bulletPath = new THREE.Line3(
+                bullet.position.clone().sub(bulletVelocity), // Previous position
+                bullet.position.clone() // Current position
+            );
 
-                // Remove the bird immediately to prevent duplicate hits
-                this.removeBird(id);
+            for (const [id, bird] of this.birds) {
+                if (!bird || !bird.position) continue;
 
-                // Play destruction sound effect
-                if (this.engine.audioManager) {
-                    this.engine.audioManager.playBirdDestruction();
-                }
+                const birdSphere = new THREE.Sphere(bird.position, 0.075);
+                
+                // Check if bullet's path intersects with the sphere
+                const intersection = this.checkBulletSpherePath(bulletPath, birdSphere);
+                
+                if (intersection) {
+                    // Get the bird's position for the explosion effect
+                    const explosionPosition = bird.position.clone();
 
-                // Create particle explosion
-                if (this.engine.particleManager) {
-                    this.engine.particleManager.createExplosion(explosionPosition);
-                }
+                    // Remove the bird immediately to prevent duplicate hits
+                    this.removeBird(id);
 
-                // Add strong haptic feedback for bird destruction
-                if (this.engine.renderer.xr.isPresenting) {
-                    const session = this.engine.renderer.xr.getSession();
-                    if (session && session.inputSources) {
-                        session.inputSources.forEach(inputSource => {
-                            if (inputSource.gamepad && this.engine.inputManager) {
-                                this.engine.inputManager.triggerHapticFeedback(inputSource.gamepad, 1.0, 150);
+                    // Create particle explosion only (sound will be handled by network hit)
+                    if (this.engine.particleManager) {
+                        this.engine.particleManager.createExplosion(explosionPosition);
+                    }
+
+                    // Add strong haptic feedback for bird destruction
+                    if (this.engine.renderer?.xr.isPresenting) {
+                        const session = this.engine.renderer.xr.getSession();
+                        if (session && session.inputSources) {
+                            session.inputSources.forEach(inputSource => {
+                                if (inputSource.gamepad && this.engine.inputManager) {
+                                    this.engine.inputManager.triggerHapticFeedback(inputSource.gamepad, 1.0, 150);
+                                }
+                            });
+                        }
+                    }
+
+                    // If we're the host
+                    if (this.engine.networkManager?.isHost) {
+                        // Only update score if it's our own bullet
+                        if (bullet.shooterId === this.engine.networkManager.localPlayerId) {
+                            console.log('[BIRD] Host updating own score for hit');
+                            this.engine.scoreManager?.updateScore(bullet.shooterId, 10);
+                            // Play sound for host's own hits
+                            this.engine.audioManager?.playBirdDestruction();
+                        }
+                        
+                        // Broadcast the hit to all clients
+                        this.engine.networkManager.send({
+                            type: 'birdHit',
+                            data: {
+                                birdId: id,
+                                bulletShooterId: bullet.shooterId,
+                                position: explosionPosition.toArray(),
+                                points: 10
+                            }
+                        });
+                    } 
+                    // If we're a client
+                    else if (this.engine.networkManager) {
+                        // Send hit attempt to host for validation
+                        console.log('[BIRD] Client sending hit attempt to host');
+                        this.engine.networkManager.send({
+                            type: 'birdHitAttempt',
+                            data: {
+                                birdId: id,
+                                bulletShooterId: bullet.shooterId,
+                                position: explosionPosition.toArray()
                             }
                         });
                     }
-                }
-
-                // If we're the host, validate the hit and update scores
-                if (this.engine.networkManager?.isHost) {
-                    // Update score for the shooter
-                    this.engine.scoreManager.updateScore(bullet.shooterId, 10);
                     
-                    // Broadcast the hit to all clients
-                    this.engine.networkManager.send({
-                        type: 'birdHit',
-                        data: {
-                            birdId: id,
-                            bulletShooterId: bullet.shooterId,
-                            position: explosionPosition.toArray(),
-                            points: 10
-                        }
-                    });
-                } else {
-                    // For clients, send hit attempt to host for validation
-                    this.engine.networkManager.send({
-                        type: 'birdHitAttempt',
-                        data: {
-                            birdId: id,
-                            bulletShooterId: bullet.shooterId,
-                            position: explosionPosition.toArray()
-                        }
-                    });
+                    return true; // Collision detected
                 }
-                
-                return true; // Collision detected
             }
+            return false;
+        } catch (error) {
+            console.error('[BIRD] Error in bullet collision check:', error);
+            return false;
         }
-        return false;
     }
 
     handleNetworkBirdHit(data) {
-        const { birdId, bulletShooterId, position, points } = data;
-        
-        // Only update score if we're not the host (host already updated)
-        if (!this.engine.networkManager?.isHost) {
-            this.engine.scoreManager.updateScore(bulletShooterId, points);
-        }
+        try {
+            if (!data || !this.engine.networkManager) {
+                console.error('[BIRD] Invalid network bird hit data or missing network manager');
+                return;
+            }
 
-        // Remove the bird if it still exists
-        if (this.birds.has(birdId)) {
-            this.removeBird(birdId);
+            const { birdId, bulletShooterId, position, points } = data;
             
-            // Create explosion effect
-            if (this.engine.particleManager) {
-                const explosionPos = new THREE.Vector3().fromArray(position);
-                this.engine.particleManager.createExplosion(explosionPos);
+            // Safety check for required data
+            if (!birdId || !bulletShooterId || !position) {
+                console.error('[BIRD] Missing required data in network bird hit:', data);
+                return;
             }
 
-            // Play sound
-            if (this.engine.audioManager) {
-                this.engine.audioManager.playBirdDestruction();
+            // Only update score if:
+            // 1. We're a client (not host)
+            // 2. The bullet was from us
+            // 3. We have a score manager
+            if (!this.engine.networkManager.isHost && 
+                bulletShooterId === this.engine.networkManager.localPlayerId &&
+                this.engine.scoreManager) {
+                console.log('[BIRD] Updating score for client hit:', bulletShooterId, points);
+                this.engine.scoreManager.updateScore(bulletShooterId, points);
+                // Play sound for client's own hits
+                this.engine.audioManager?.playBirdDestruction();
             }
+
+            // Handle visual effects
+            try {
+                // Create explosion effect
+                if (this.engine.particleManager) {
+                    const explosionPos = new THREE.Vector3().fromArray(position);
+                    this.engine.particleManager.createExplosion(explosionPos);
+                }
+            } catch (effectError) {
+                console.error('[BIRD] Error playing hit effects:', effectError);
+            }
+
+            // Remove the bird if it exists
+            if (this.birds.has(birdId)) {
+                this.removeBird(birdId);
+            } else {
+                console.warn('[BIRD] Bird not found for network hit:', birdId);
+            }
+        } catch (error) {
+            console.error('[BIRD] Error handling network bird hit:', error);
         }
     }
 
