@@ -202,7 +202,7 @@ export class NetworkManager {
                 break;
 
             case 'birdHitAttempt':
-                if (this.isHost) {
+                if (this.isHost && this.engine.birdManager) {
                     // Host validates the hit attempt
                     const bird = this.engine.birdManager.birds.get(data.data.birdId);
                     if (bird) {
@@ -222,6 +222,7 @@ export class NetworkManager {
 
             case 'birdHit':
                 if (this.engine.birdManager) {
+                    console.log('[NETWORK] Received bird hit:', data.data);
                     this.engine.birdManager.handleNetworkBirdHit(data.data);
                 }
                 break;
