@@ -206,8 +206,7 @@ export class NetworkManager {
                     // Host validates the hit attempt
                     const bird = this.engine.birdManager.birds.get(data.data.birdId);
                     if (bird) {
-                        // Bird exists and hasn't been hit yet, validate the hit
-                        this.engine.birdManager.removeBird(data.data.birdId);
+                        // Bird exists, validate the hit
                         this.send({
                             type: 'birdHit',
                             data: {
