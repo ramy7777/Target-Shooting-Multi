@@ -52,15 +52,23 @@ app.use('/three', express.static(path.join(__dirname, '../node_modules/three')))
 
 // Only use HTTPS in development
 let server;
-if (process.env.NODE_ENV === 'production') {
+if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
+    console.log("Starting server in production mode with HTTP");
     server = require('http').createServer(app);
 } else {
-    // SSL certificates for HTTPS (required for WebXR in development)
-    const options = {
-        key: fs.readFileSync(path.join(__dirname, '../certs/key.pem')),
-        cert: fs.readFileSync(path.join(__dirname, '../certs/cert.pem'))
-    };
-    server = https.createServer(options, app);
+    console.log("Starting server in development mode with HTTPS");
+    try {
+        // SSL certificates for HTTPS (required for WebXR in development)
+        const options = {
+            key: fs.readFileSync(path.join(__dirname, '../certs/key.pem')),
+            cert: fs.readFileSync(path.join(__dirname, '../certs/cert.pem'))
+        };
+        server = https.createServer(options, app);
+    } catch (error) {
+        console.error("Error loading SSL certificates:", error);
+        console.log("Falling back to HTTP server");
+        server = require('http').createServer(app);
+    }
 }
 
 const wss = new WebSocket.Server({ server });
@@ -442,11 +450,21 @@ function broadcastToRoom(roomCode, message, exclude = null) {
     }
 }
 
-// Start server
+// Start the server
 server.listen(port, () => {
-    console.log(`Server running at:`);
-    console.log(`- Local: https://localhost:${port}`);
-    console.log(`- Network: https://${ip.address()}:${port}`);
-}).on('error', (error) => {
-    console.error('Failed to start server:', error);
+    const localUrl = `${process.env.NODE_ENV === 'production' || process.env.RENDER ? 'http' : 'https'}://localhost:${port}`;
+    const networkUrl = `${process.env.NODE_ENV === 'production' || process.env.RENDER ? 'http' : 'https'}://${ip.address()}:${port}`;
+    
+    console.log('Server running at:');
+    
+    if (!process.env.RENDER) {
+        // Only show local URL in non-render environments
+        console.log(`- Local: ${localUrl}`);
+    }
+    
+    if (process.env.RENDER) {
+        console.log(`- Deployed on Render.com`);
+    } else {
+        console.log(`- Network: ${networkUrl}`);
+    }
 });
