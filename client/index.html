@@ -79,14 +79,16 @@
     </div>
     <div id="vrStatus"></div>
 
+    <!-- Import Three.js as ES modules from local server -->
     <script type="importmap">
     {
         "imports": {
-            "three": "https://unpkg.com/three@0.159.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.159.0/examples/jsm/"
+            "three": "/three/build/three.module.js",
+            "three/addons/": "/three/examples/jsm/"
         }
     }
     </script>
+    
     <script type="module">
         import { Engine } from './js/core/Engine.js';
         
