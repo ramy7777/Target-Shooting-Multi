@@ -11,6 +11,7 @@ export class VRScoreUI {
         this.textMeshes = new Map();
         this.playerTagMeshes = new Map();
         this.timerMesh = null;
+        this.sidePanelTimerMesh = null;
         this.startButton = null;
         this.loadFont();
 
@@ -77,6 +78,37 @@ export class VRScoreUI {
         const tagsBackground = new THREE.Mesh(tagsBackgroundGeometry, tagsBackgroundMaterial);
         tagsBackground.position.z = -0.01;
         this.playerTagsGroup.add(tagsBackground);
+
+        // Add side panel timer
+        await this.createSidePanelTimerDisplay();
+        console.log('[UI] Side panel timer display created');
+
+        // Add 'PLAYERS' heading to side panel
+        if (this.font) {
+            const headingGeometry = new TextGeometry('PLAYERS', {
+                font: this.font,
+                size: 0.1,
+                height: 0.01,
+                curveSegments: 4,
+                bevelEnabled: false
+            });
+
+            const headingMaterial = new THREE.MeshStandardMaterial({
+                color: 0x4099ff,
+                emissive: 0x4099ff,
+                emissiveIntensity: 10.0,
+                metalness: 0,
+                roughness: 0,
+                transparent: true,
+                opacity: 1.0
+            });
+
+            const headingMesh = new THREE.Mesh(headingGeometry, headingMaterial);
+            headingGeometry.computeBoundingBox();
+            const headingCenterOffset = -(headingGeometry.boundingBox.max.x - headingGeometry.boundingBox.min.x) / 2;
+            headingMesh.position.set(headingCenterOffset, 1.1, 0.01);
+            this.playerTagsGroup.add(headingMesh);
+        }
 
         // Add main background panel with gradient effect
         const mainPanelGeometry = new THREE.PlaneGeometry(4, 6);
@@ -389,7 +421,7 @@ export class VRScoreUI {
         // Calculate vertical positions
         const startY = 1.8;
         const spacing = 0.45;
-        const tagYPosition = 0.8 - (rank * 0.2); // More compact spacing for floating panel
+        const tagYPosition = 0.9 - (rank * 0.2); // Adjusted position for side panel scores
 
         // Create text content
         const isLocalPlayer = playerId === this.engine.playerManager.localPlayer.id;
@@ -497,7 +529,7 @@ export class VRScoreUI {
     repositionScores() {
         const startY = 1.8;
         const spacing = 0.45;
-        const tagStartY = 0.8;
+        const tagStartY = 0.9; // Higher up to accommodate PLAYERS heading at the top
         const tagSpacing = 0.2;
         
         // Get players from ScoreManager directly for more reliability
@@ -511,6 +543,7 @@ export class VRScoreUI {
             
             // Update positions based on new ranking
             sortedScores.forEach(([playerId, score], index) => {
+                // Main panel scores positioning - unchanged
                 if (this.textMeshes.has(playerId)) {
                     // Reposition main leaderboard text
                     const display = this.textMeshes.get(playerId);
@@ -533,6 +566,7 @@ export class VRScoreUI {
                     }
                 }
                 
+                // Side panel tag positioning - adjusted for new headings
                 if (this.playerTagMeshes.has(playerId)) {
                     // Reposition player tag text
                     const tagDisplay = this.playerTagMeshes.get(playerId);
@@ -545,7 +579,7 @@ export class VRScoreUI {
                             tagMesh.geometry.computeBoundingBox();
                             const tagCenterOffset = -(tagMesh.geometry.boundingBox.max.x - tagMesh.geometry.boundingBox.min.x) / 2;
                             
-                            // Update position
+                            // Update position - adjusted for new headings
                             const tagYPosition = tagStartY - (index * tagSpacing);
                             tagMesh.position.set(tagCenterOffset, tagYPosition, 0.02);
                         } catch (error) {
@@ -635,33 +669,135 @@ export class VRScoreUI {
     }
 
     updateTimer(timeText) {
-        if (!this.timerMesh || !this.font) {
-            console.warn('[UI] Timer mesh or font not initialized');
+        if (!this.font) {
+            console.warn('[UI] Font not loaded yet, cannot update timer');
             return;
         }
         
-        // Create timer text
-        const timerGeometry = new TextGeometry(timeText, {
+        // Update main timer
+        if (this.timerMesh) {
+            // Create timer text geometry
+            const timerGeometry = new TextGeometry(timeText, {
+                font: this.font,
+                size: 0.3,
+                height: 0.03,
+                curveSegments: 4,
+                bevelEnabled: false
+            });
+
+            // Dispose of old geometry
+            if (this.timerMesh.geometry) {
+                this.timerMesh.geometry.dispose();
+            }
+
+            // Update geometry
+            this.timerMesh.geometry = timerGeometry;
+            
+            // Position timer
+            timerGeometry.computeBoundingBox();
+            const centerOffset = -(timerGeometry.boundingBox.max.x - timerGeometry.boundingBox.min.x) / 2;
+            this.timerMesh.position.set(centerOffset, -2.8, 0.01);
+        }
+        
+        // Update side panel timer
+        if (this.sidePanelTimerMesh) {
+            // Create side panel timer text geometry
+            const sideTimerGeometry = new TextGeometry(timeText, {
+                font: this.font,
+                size: 0.15, // Smaller size for side panel
+                height: 0.015,
+                curveSegments: 4,
+                bevelEnabled: false
+            });
+
+            // Dispose of old geometry
+            if (this.sidePanelTimerMesh.geometry) {
+                this.sidePanelTimerMesh.geometry.dispose();
+            }
+
+            // Update geometry
+            this.sidePanelTimerMesh.geometry = sideTimerGeometry;
+            
+            // Position timer
+            sideTimerGeometry.computeBoundingBox();
+            const sideCenterOffset = -(sideTimerGeometry.boundingBox.max.x - sideTimerGeometry.boundingBox.min.x) / 2;
+            this.sidePanelTimerMesh.position.set(sideCenterOffset, -1.1, 0.01);
+        }
+        
+        console.log('[UI] Timer updated to:', timeText);
+    }
+
+    async createSidePanelTimerDisplay() {
+        console.log('[UI] Creating side panel timer display');
+        if (!this.font) {
+            console.warn('[UI] Font not loaded yet, cannot create side panel timer');
+            return;
+        }
+        
+        // Create TIME heading
+        const headingGeometry = new TextGeometry('TIME', {
             font: this.font,
-            size: 0.3,
-            height: 0.03,
+            size: 0.1,
+            height: 0.01,
             curveSegments: 4,
             bevelEnabled: false
         });
 
-        // Dispose of old geometry
-        if (this.timerMesh.geometry) {
-            this.timerMesh.geometry.dispose();
-        }
+        const headingMaterial = new THREE.MeshStandardMaterial({
+            color: 0x4099ff,
+            emissive: 0x4099ff,
+            emissiveIntensity: 10.0,
+            metalness: 0,
+            roughness: 0,
+            transparent: true,
+            opacity: 1.0
+        });
 
-        // Update geometry
-        this.timerMesh.geometry = timerGeometry;
+        const headingMesh = new THREE.Mesh(headingGeometry, headingMaterial);
+        headingGeometry.computeBoundingBox();
+        const headingCenterOffset = -(headingGeometry.boundingBox.max.x - headingGeometry.boundingBox.min.x) / 2;
+        headingMesh.position.set(headingCenterOffset, -0.9, 0.01);
+        this.playerTagsGroup.add(headingMesh);
         
-        // Position timer
+        // Create timer text
+        const timerGeometry = new TextGeometry('2:00', {
+            font: this.font,
+            size: 0.15, // Smaller size for side panel
+            height: 0.015,
+            curveSegments: 4,
+            bevelEnabled: false
+        });
+
+        const timerMaterial = new THREE.MeshStandardMaterial({
+            color: 0x00ffff,
+            emissive: 0x00ffff,
+            emissiveIntensity: 20.0,
+            metalness: 0,
+            roughness: 0,
+            transparent: true,
+            opacity: 1.0
+        });
+
+        // Create timer mesh for side panel
+        this.sidePanelTimerMesh = new THREE.Mesh(timerGeometry, timerMaterial);
         timerGeometry.computeBoundingBox();
         const centerOffset = -(timerGeometry.boundingBox.max.x - timerGeometry.boundingBox.min.x) / 2;
-        this.timerMesh.position.set(centerOffset, -2.8, 0.01);
         
-        console.log('[UI] Timer updated to:', timeText);
+        // Position at the bottom of the side panel
+        this.sidePanelTimerMesh.position.set(centerOffset, -1.1, 0.01);
+        this.playerTagsGroup.add(this.sidePanelTimerMesh);
+        
+        // Add a divider line
+        const dividerGeometry = new THREE.PlaneGeometry(0.8, 0.01);
+        const dividerMaterial = new THREE.MeshBasicMaterial({
+            color: 0x4099ff,
+            transparent: true,
+            opacity: 0.7
+        });
+        const divider = new THREE.Mesh(dividerGeometry, dividerMaterial);
+        divider.position.set(0, -0.75, 0.01);
+        this.playerTagsGroup.add(divider);
+        
+        console.log('[UI] Side panel timer display initialized');
     }
 }
