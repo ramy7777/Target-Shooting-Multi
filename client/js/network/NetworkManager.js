@@ -233,6 +233,26 @@ export class NetworkManager {
                         console.error('[NETWORK] Invalid game start data:', data);
                         return;
                     }
+                    
+                    // Reset scores when new game starts
+                    if (this.engine.scoreManager) {
+                        console.log('[NETWORK] Resetting scores for new game');
+                        this.engine.scoreManager.resetScores();
+                    }
+                    
+                    // Cleanup any existing birds
+                    if (this.engine.birdManager) {
+                        console.log('[NETWORK] Cleaning up existing birds for new game');
+                        
+                        // Store a copy of all bird IDs
+                        const birdIds = Array.from(this.engine.birdManager.birds.keys());
+                        
+                        // Remove all existing birds
+                        birdIds.forEach(id => {
+                            this.engine.birdManager.removeBird(id);
+                        });
+                    }
+                    
                     this.engine.uiManager.handleNetworkGameStart(data.data);
                 }
                 break;

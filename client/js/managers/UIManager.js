@@ -55,6 +55,25 @@ export class UIManager {
         
         console.log('[GAME_START] Starting game at:', new Date(this.gameStartTime).toISOString());
         
+        // Reset scores to zero at the beginning of a new game
+        if (this.engine.scoreManager) {
+            console.log('[GAME_START] Resetting all scores');
+            this.engine.scoreManager.resetScores();
+        }
+        
+        // Cleanup any existing birds
+        if (this.engine.birdManager) {
+            console.log('[GAME_START] Cleaning up existing birds');
+            
+            // Store a copy of all bird IDs
+            const birdIds = Array.from(this.engine.birdManager.birds.keys());
+            
+            // Remove all existing birds
+            birdIds.forEach(id => {
+                this.engine.birdManager.removeBird(id);
+            });
+        }
+        
         // Hide start button in VR score UI
         if (this.engine.scoreManager?.vrScoreUI?.startButton) {
             console.log('[GAME_START] Hiding start button');
@@ -70,7 +89,8 @@ export class UIManager {
         if (this.engine.networkManager?.isHost) {
             const startData = {
                 startTime: this.gameStartTime,
-                duration: this.gameDuration
+                duration: this.gameDuration,
+                currentTime: Date.now()
             };
             console.log('[GAME_START] Sending start game event to network:', startData);
             this.engine.networkManager.send({

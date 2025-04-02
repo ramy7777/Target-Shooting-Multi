@@ -183,6 +183,35 @@ class ScoreManager {
         }
     }
 
+    resetScores() {
+        console.log('[SCORE] Resetting all scores to zero');
+        
+        // Store player IDs
+        const playerIds = Array.from(this.scores.keys());
+        
+        // Reset all scores to zero
+        playerIds.forEach(playerId => {
+            this.scores.set(playerId, 0);
+        });
+        
+        // Update displays
+        this.updateScoreDisplay();
+        
+        // Update VR Score UI with reset scores
+        if (this.vrScoreUI) {
+            this.updateVRScores();
+        }
+        
+        // Broadcast the reset scores to all clients if we're the host
+        if (this.engine.networkManager?.isHost) {
+            playerIds.forEach(playerId => {
+                this.engine.networkManager.broadcastScoreUpdate(playerId, 0);
+            });
+        }
+        
+        console.log('[SCORE] All scores have been reset');
+    }
+
     update(deltaTime) {
         // Update VR score UI position
         if (this.engine.renderer.xr.isPresenting) {
