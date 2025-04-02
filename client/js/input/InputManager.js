@@ -13,6 +13,8 @@ export class InputManager {
             middle: false,
             right: false
         };
+        this.lastMouseClick = 0;
+        this.mouseClickCooldown = 250; // 250ms cooldown between shots
 
         // Controller settings from documentation
         this.deadzone = 0.2;           // Thumbstick deadzone
@@ -57,6 +59,11 @@ export class InputManager {
         document.addEventListener('mousemove', (event) => {
             this.mouse.x = event.clientX;
             this.mouse.y = event.clientY;
+            
+            // Update crosshair position
+            if (this.crosshairElement) {
+                this.updateCrosshairPosition(event.clientX, event.clientY);
+            }
         });
         
         document.addEventListener('mousedown', (event) => {
@@ -76,6 +83,9 @@ export class InputManager {
             left: false,
             right: false
         };
+        
+        // Add crosshair for PC mode
+        this.setupCrosshair();
     }
 
     initializeControllers() {
@@ -343,14 +353,20 @@ export class InputManager {
         }
         this.lastMouseClick = now;
 
-        // Create bullet from camera position and direction
-        const position = new THREE.Vector3();
-        const direction = new THREE.Vector3(0, 0, -1);
+        // Calculate ray from camera through mouse position
+        const raycaster = new THREE.Raycaster();
+        const mouseNDC = new THREE.Vector2(
+            (this.mouse.x / window.innerWidth) * 2 - 1,
+            -(this.mouse.y / window.innerHeight) * 2 + 1
+        );
         
-        // Get camera position and direction
-        this.engine.camera.getWorldPosition(position);
-        direction.applyQuaternion(this.engine.camera.quaternion);
-
+        // Set the raycaster using the camera and mouse position
+        raycaster.setFromCamera(mouseNDC, this.engine.camera);
+        
+        // Create bullet using the ray's direction and origin
+        const position = raycaster.ray.origin.clone();
+        const direction = raycaster.ray.direction.clone().normalize();
+        
         // Offset bullet spawn position slightly forward to avoid self-collision
         const spawnOffset = direction.clone().multiplyScalar(0.5);
         position.add(spawnOffset);
@@ -358,6 +374,14 @@ export class InputManager {
         // Create bullet through BulletManager
         if (this.engine.bulletManager) {
             this.engine.bulletManager.createBullet(position, direction);
+            
+            // Visual feedback - grow and shrink the crosshair
+            if (this.crosshairElement) {
+                this.crosshairElement.style.transform = 'scale(1.2)';
+                setTimeout(() => {
+                    this.crosshairElement.style.transform = 'scale(1)';
+                }, 100);
+            }
         }
     }
 
@@ -374,6 +398,85 @@ export class InputManager {
         if (gamepad.hapticActuators?.[0]) {
             gamepad.hapticActuators[0].pulse(intensity, duration)
                 .catch(() => {}); // Silently handle haptic feedback errors
+        }
+    }
+
+    setupCrosshair() {
+        // Create crosshair container
+        this.crosshairElement = document.createElement('div');
+        this.crosshairElement.id = 'crosshair';
+        this.crosshairElement.style.cssText = `
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease, transform 0.1s ease;
+            z-index: 1000;
+        `;
+        
+        // Create crosshair lines
+        const createLine = (rotation) => {
+            const line = document.createElement('div');
+            line.style.cssText = `
+                position: absolute;
+                background: white;
+                width: 2px;
+                height: 12px;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%) ${rotation};
+                box-shadow: 0 0 4px rgba(0, 170, 255, 0.8);
+            `;
+            return line;
+        };
+        
+        // Add the lines
+        this.crosshairElement.appendChild(createLine('rotate(0deg)'));
+        this.crosshairElement.appendChild(createLine('rotate(90deg)'));
+        this.crosshairElement.appendChild(createLine('rotate(45deg)'));
+        this.crosshairElement.appendChild(createLine('rotate(-45deg)'));
+        
+        // Add to document
+        document.body.appendChild(this.crosshairElement);
+        
+        // Update crosshair position on mouse move
+        document.addEventListener('mousemove', (event) => {
+            this.updateCrosshairPosition(event.clientX, event.clientY);
+        });
+        
+        // Show/hide crosshair based on XR state
+        this.engine.renderer.xr.addEventListener('sessionstart', () => {
+            this.crosshairElement.style.opacity = '0';
+        });
+        
+        this.engine.renderer.xr.addEventListener('sessionend', () => {
+            this.crosshairElement.style.opacity = '1';
+        });
+        
+        // Initially show if not in VR
+        if (!this.engine.renderer.xr.isPresenting) {
+            this.crosshairElement.style.opacity = '1';
+        }
+    }
+    
+    updateCrosshairPosition(x, y) {
+        if (this.crosshairElement) {
+            // Add a slight delay/smoothing effect
+            const targetX = x;
+            const targetY = y;
+            
+            this.crosshairElement.style.left = `${targetX}px`;
+            this.crosshairElement.style.top = `${targetY}px`;
+            
+            // Change color based on mouse down state for visual feedback
+            const color = this.mouseButtons.left ? 'rgba(0, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.7)';
+            
+            // Update all lines to have the new color
+            Array.from(this.crosshairElement.children).forEach(line => {
+                line.style.background = color;
+                line.style.boxShadow = `0 0 4px ${this.mouseButtons.left ? 'rgba(0, 170, 255, 0.9)' : 'rgba(0, 170, 255, 0.6)'}`;
+            });
         }
     }
 }
