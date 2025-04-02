@@ -16,24 +16,27 @@ export class UIManager {
     }
 
     update() {
-        // Only send timer syncs if we're the host and game is fully initialized
-        if (this.engine.networkManager?.isHost) {
-            if (this.gameStarted && this.timerInterval) {
-                const currentTime = Date.now();
-                if (currentTime - this.lastTimerSync >= 1000) { // Send sync every second
-                    this.lastTimerSync = currentTime;
-                    const gameTime = Math.floor((currentTime - this.gameStartTime) / 1000);
-                    console.log('[UI] Sending timer sync - Game time:', gameTime, 's');
-                    this.engine.networkManager.send({
-                        type: 'timerSync',
-                        data: {
-                            currentTime: currentTime,
-                            gameStartTime: this.gameStartTime,
-                            gameDuration: this.gameDuration,
-                            gameTime: gameTime
-                        }
-                    });
-                }
+        // Only send timer syncs if we're the host and game is started
+        if (this.engine.networkManager?.isHost && this.gameStarted) {
+            const currentTime = Date.now();
+            // Send sync every 1 second
+            if (currentTime - this.lastTimerSync >= 1000) { 
+                this.lastTimerSync = currentTime;
+                const gameTime = Math.floor((currentTime - this.gameStartTime) / 1000);
+                const remainingTime = Math.max(0, this.gameDuration - (currentTime - this.gameStartTime));
+                
+                console.log('[UI] Sending timer sync - Game time:', gameTime, 's, Remaining:', Math.floor(remainingTime / 1000), 's');
+                
+                this.engine.networkManager.send({
+                    type: 'timerSync',
+                    data: {
+                        currentTime: currentTime,
+                        gameStartTime: this.gameStartTime,
+                        gameDuration: this.gameDuration,
+                        gameTime: gameTime,
+                        remainingTime: remainingTime
+                    }
+                });
             }
         }
     }
@@ -53,7 +56,7 @@ export class UIManager {
         console.log('[GAME_START] Starting game at:', new Date(this.gameStartTime).toISOString());
         
         // Hide start button in VR score UI
-        if (this.engine.scoreManager.vrScoreUI && this.engine.scoreManager.vrScoreUI.startButton) {
+        if (this.engine.scoreManager?.vrScoreUI?.startButton) {
             console.log('[GAME_START] Hiding start button');
             this.engine.scoreManager.vrScoreUI.startButton.visible = false;
         }
@@ -63,21 +66,30 @@ export class UIManager {
         this.startGame();
         this.startTimer(); // This will set up timerInterval and start updates
 
-        // Wait a short moment to ensure local game is fully initialized
-        setTimeout(() => {
-            // Send start game event to all players with synchronized time
-            if (this.engine.networkManager?.isHost) {
-                const startData = {
-                    startTime: this.gameStartTime,
-                    duration: this.gameDuration
-                };
-                console.log('[GAME_START] Sending start game event to network:', startData);
-                this.engine.networkManager.send({
-                    type: 'gameStart',
-                    data: startData
-                });
-            }
-        }, 500); // Wait 500ms to ensure everything is initialized
+        // Immediately send timer sync if host
+        if (this.engine.networkManager?.isHost) {
+            const startData = {
+                startTime: this.gameStartTime,
+                duration: this.gameDuration
+            };
+            console.log('[GAME_START] Sending start game event to network:', startData);
+            this.engine.networkManager.send({
+                type: 'gameStart',
+                data: startData
+            });
+            
+            // Immediately send a timer sync
+            this.engine.networkManager.send({
+                type: 'timerSync',
+                data: {
+                    currentTime: Date.now(),
+                    gameStartTime: this.gameStartTime,
+                    gameDuration: this.gameDuration,
+                    gameTime: 0,
+                    remainingTime: this.gameDuration
+                }
+            });
+        }
     }
 
     startGame() {
@@ -127,6 +139,14 @@ export class UIManager {
         this.gameStartTime = data.startTime;
         this.gameDuration = data.duration;
         
+        // Calculate time difference between host time and client time
+        const timeDiff = Date.now() - data.currentTime;
+        if (data.currentTime) {
+            // Adjust game start time by the time difference
+            this.gameStartTime += timeDiff;
+            console.log('[NETWORK_GAME_START] Adjusted start time by time diff:', timeDiff, 'ms');
+        }
+        
         console.log('[NETWORK_GAME_START] Game state set:', {
             started: this.gameStarted,
             startTime: new Date(this.gameStartTime).toISOString(),
@@ -134,35 +154,24 @@ export class UIManager {
         });
         
         // Hide start button in VR score UI
-        if (this.engine.scoreManager.vrScoreUI && this.engine.scoreManager.vrScoreUI.startButton) {
+        if (this.engine.scoreManager?.vrScoreUI?.startButton) {
             console.log('[NETWORK_GAME_START] Hiding start button');
             this.engine.scoreManager.vrScoreUI.startButton.visible = false;
         }
         
         // Start the game
-        console.log('[NETWORK_GAME_START] Starting game');
+        console.log('[NETWORK_GAME_START] Starting game and timer');
         this.startGame();
-
-        // Start timer after a short delay to ensure synchronization
-        setTimeout(() => {
-            this.startTimer();
-        }, 100);
+        this.startTimer();
     }
 
     handleTimerSync(data) {
         if (!this.gameStarted) {
-            console.log('[UI] Ignoring timer sync - game not started');
-            return;
-        }
-
-        // Give a short grace period for timer initialization
-        if (!this.timerInterval) {
-            setTimeout(() => {
-                if (this.gameStarted && !this.timerInterval) {
-                    console.log('[UI] Starting timer after sync');
-                    this.startTimer();
-                }
-            }, 100);
+            console.log('[UI] Initializing timer from sync - game not started locally');
+            this.gameStarted = true;
+            this.gameStartTime = data.gameStartTime;
+            this.gameDuration = data.gameDuration;
+            this.startTimer();
             return;
         }
 
@@ -178,8 +187,16 @@ export class UIManager {
         // Adjust game start time by the time difference
         this.gameStartTime += timeDiff;
         
-        console.log('[UI] Timer synced - Game time:', gameTime, 's');
-        this.updateTimer();
+        console.log('[UI] Timer synced - Game time:', gameTime, 's, Time diff:', timeDiff, 'ms');
+        
+        // Make sure timer is running
+        if (!this.timerInterval) {
+            console.log('[UI] Starting timer after sync');
+            this.startTimer();
+        } else {
+            // Just update the timer display
+            this.updateTimer();
+        }
     }
 
     handleGameEnd() {

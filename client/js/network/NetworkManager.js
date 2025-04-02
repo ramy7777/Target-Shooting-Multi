@@ -266,19 +266,19 @@ export class NetworkManager {
                 this.engine.voiceManager.handleVoiceStop(data.playerId);
                 break;
 
+            case 'scoreUpdate':
+                if (this.engine.scoreManager) {
+                    console.log('[NETWORK] Received score update:', data);
+                    this.engine.scoreManager.handleNetworkScoreUpdate(data.data);
+                }
+                break;
+
             case 'timerSync':
-                if (!this.isHost) {
-                    // Only process timer syncs if game is fully initialized
-                    if (!this.engine.uiManager.gameStarted || !this.engine.uiManager.timerInterval) {
-                        console.log('[NETWORK] Ignoring timer sync - game not fully started');
-                        return;
-                    }
-                    if (!data.data || !data.data.gameTime) {
-                        console.log('[NETWORK] Invalid timer sync data');
-                        return;
-                    }
-                    console.log('[NETWORK] Processing timer sync - Game time:', data.data.gameTime, 's');
+                console.log('[NETWORK] Received timer sync from host:', data.data);
+                if (this.engine.uiManager) {
                     this.engine.uiManager.handleTimerSync(data.data);
+                } else {
+                    console.error('[NETWORK] UIManager not found for timer sync');
                 }
                 break;
 
@@ -312,14 +312,28 @@ export class NetworkManager {
         const checkInitialization = () => {
             if (this.engine.uiManager.gameStarted && this.engine.uiManager.timerInterval) {
                 // Game is fully initialized, send start message to clients
+                const currentTime = Date.now();
                 const startData = {
                     startTime: this.engine.uiManager.gameStartTime,
-                    duration: this.engine.uiManager.gameDuration
+                    duration: this.engine.uiManager.gameDuration,
+                    currentTime: currentTime
                 };
                 console.log('[NETWORK] Game initialized, sending start to clients:', startData);
                 this.send({
                     type: 'gameStart',
                     data: startData
+                });
+                
+                // Immediately send a timer sync as well
+                this.send({
+                    type: 'timerSync',
+                    data: {
+                        currentTime: currentTime,
+                        gameStartTime: this.engine.uiManager.gameStartTime,
+                        gameDuration: this.engine.uiManager.gameDuration,
+                        gameTime: 0,
+                        remainingTime: this.engine.uiManager.gameDuration
+                    }
                 });
             } else if (this.engine.uiManager.gameStarted) {
                 // Game started but not fully initialized, wait a bit longer
@@ -332,6 +346,33 @@ export class NetworkManager {
 
         // Start checking initialization after a short delay
         setTimeout(checkInitialization, 50);
+    }
+
+    // Broadcast score update to all clients
+    broadcastScoreUpdate(playerId, score) {
+        if (!this.connected || !this.currentRoom) return;
+        
+        console.log(`[NETWORK] Broadcasting score update: Player ${playerId} = ${score}`);
+        
+        // If we're the host, send to all clients
+        if (this.isHost) {
+            this.send({
+                type: 'scoreUpdate',
+                data: {
+                    playerId: playerId,
+                    score: score
+                }
+            });
+        } else {
+            // If we're a client, send to the host to relay to everyone
+            this.send({
+                type: 'scoreUpdate',
+                data: {
+                    playerId: playerId,
+                    score: score
+                }
+            });
+        }
     }
 
     async autoJoinRoom() {
