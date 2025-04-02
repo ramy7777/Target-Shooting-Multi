@@ -178,8 +178,8 @@ export class VRScoreUI {
         
         // Start animation loop for glow effect
         const animate = () => {
-            if (glowMaterial) {
-                glowMaterial.uniforms.time.value = performance.now() * 0.001;
+            if (this.glowMaterial) {
+                this.glowMaterial.uniforms.time.value = performance.now() * 0.001;
             }
             requestAnimationFrame(animate);
         };
@@ -297,7 +297,7 @@ export class VRScoreUI {
 
         // Add glow effect
         const glowGeometry = new THREE.PlaneGeometry(1.6, 0.9);
-        const glowMaterial = new THREE.ShaderMaterial({
+        this.glowMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 color: { value: new THREE.Color(0x1a9fff) },
                 time: { value: 0 }
@@ -325,7 +325,7 @@ export class VRScoreUI {
             depthWrite: false
         });
 
-        const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
+        const glowMesh = new THREE.Mesh(glowGeometry, this.glowMaterial);
         glowMesh.position.set(0, 0, -0.05);
         this.startButton.add(glowMesh);
 
@@ -356,36 +356,34 @@ export class VRScoreUI {
 
         // Add to scoreGroup
         this.scoreGroup.add(this.startButton);
-
-        // Start glow animation
-        const animate = () => {
-            if (glowMaterial && !this.engine.uiManager.gameStarted) {
-                glowMaterial.uniforms.time.value = performance.now() * 0.001;
-            }
-            requestAnimationFrame(animate);
-        };
-        animate();
     }
 
     updatePlayerScore(playerId, score, rank) {
-        if (!this.font) return;
+        console.log(`[VR_SCORE_UI] Updating score for Player ${playerId}, Score: ${score}, Rank: ${rank}`);
+        
+        if (!this.font) {
+            console.warn('[VR_SCORE_UI] Font not loaded yet, cannot update score');
+            return;
+        }
 
-        // Update main leaderboard
+        // Clear old score text mesh
         if (this.textMeshes.has(playerId)) {
             const display = this.textMeshes.get(playerId);
             this.scoreGroup.remove(display.text);
-            display.text.geometry.dispose();
-            display.text.material.dispose();
+            if (display.text.geometry) display.text.geometry.dispose();
+            if (display.text.material) display.text.material.dispose();
             this.textMeshes.delete(playerId);
+            console.log(`[VR_SCORE_UI] Removed old text mesh for Player ${playerId}`);
         }
 
-        // Update player tag
+        // Clear old player tag text mesh
         if (this.playerTagMeshes.has(playerId)) {
             const display = this.playerTagMeshes.get(playerId);
             this.playerTagsGroup.remove(display.text);
-            display.text.geometry.dispose();
-            display.text.material.dispose();
+            if (display.text.geometry) display.text.geometry.dispose();
+            if (display.text.material) display.text.material.dispose();
             this.playerTagMeshes.delete(playerId);
+            console.log(`[VR_SCORE_UI] Removed old tag mesh for Player ${playerId}`);
         }
 
         // Calculate vertical positions
@@ -426,6 +424,7 @@ export class VRScoreUI {
         textMesh.position.set(centerOffset, startY - (rank * spacing), 0.02);
         this.scoreGroup.add(textMesh);
         this.textMeshes.set(playerId, { text: textMesh });
+        console.log(`[VR_SCORE_UI] Added text mesh for Player ${playerId} at position y=${startY - (rank * spacing)}`);
 
         // Create player tag text (smaller and includes score)
         const tagGeometry = new TextGeometry(tagText, {
@@ -454,29 +453,45 @@ export class VRScoreUI {
         tagMesh.position.set(tagCenterOffset, tagYPosition, 0.02);
         this.playerTagsGroup.add(tagMesh);
         this.playerTagMeshes.set(playerId, { text: tagMesh });
+        console.log(`[VR_SCORE_UI] Added tag mesh for Player ${playerId} at position y=${tagYPosition}`);
+        
+        // Update positions for all scores to ensure proper layout
+        this.repositionScores();
     }
 
     removePlayer(playerId) {
+        console.log(`[VR_SCORE_UI] Removing player ${playerId}`);
+        
         // Remove from main leaderboard
         if (this.textMeshes.has(playerId)) {
             const display = this.textMeshes.get(playerId);
-            this.scoreGroup.remove(display.text);
-            display.text.geometry.dispose();
-            display.text.material.dispose();
+            if (display.text) {
+                this.scoreGroup.remove(display.text);
+                if (display.text.geometry) display.text.geometry.dispose();
+                if (display.text.material) display.text.material.dispose();
+            }
             this.textMeshes.delete(playerId);
+            console.log(`[VR_SCORE_UI] Removed main leaderboard entry for Player ${playerId}`);
         }
 
         // Remove from player tags
         if (this.playerTagMeshes.has(playerId)) {
             const display = this.playerTagMeshes.get(playerId);
-            this.playerTagsGroup.remove(display.text);
-            display.text.geometry.dispose();
-            display.text.material.dispose();
+            if (display.text) {
+                this.playerTagsGroup.remove(display.text);
+                if (display.text.geometry) display.text.geometry.dispose();
+                if (display.text.material) display.text.material.dispose();
+            }
             this.playerTagMeshes.delete(playerId);
+            console.log(`[VR_SCORE_UI] Removed tag for Player ${playerId}`);
         }
         
         // Reposition remaining scores
-        this.repositionScores();
+        try {
+            this.repositionScores();
+        } catch (error) {
+            console.error('[VR_SCORE_UI] Error repositioning scores after removal:', error);
+        }
     }
 
     repositionScores() {
@@ -485,18 +500,63 @@ export class VRScoreUI {
         const tagStartY = 0.8;
         const tagSpacing = 0.2;
         
-        const players = Array.from(this.textMeshes.keys());
-        players.forEach((playerId, index) => {
-            // Reposition main leaderboard text
-            const display = this.textMeshes.get(playerId);
-            const yPosition = startY - (index * spacing);
-            display.text.position.y = yPosition;
-
-            // Reposition player tag text
-            const tagDisplay = this.playerTagMeshes.get(playerId);
-            const tagYPosition = tagStartY - (index * tagSpacing);
-            tagDisplay.text.position.y = tagYPosition;
-        });
+        // Get players from ScoreManager directly for more reliability
+        if (this.engine.scoreManager) {
+            // Use the actual scores from ScoreManager instead of trying to parse from text
+            const sortedScores = Array.from(this.engine.scoreManager.scores.entries())
+                .sort((a, b) => b[1] - a[1]);
+            
+            console.log('[VR_SCORE_UI] Repositioning scores based on ScoreManager data:', 
+                sortedScores.map(([id, score]) => `Player ${id}: ${score}`).join(', '));
+            
+            // Update positions based on new ranking
+            sortedScores.forEach(([playerId, score], index) => {
+                if (this.textMeshes.has(playerId)) {
+                    // Reposition main leaderboard text
+                    const display = this.textMeshes.get(playerId);
+                    const textMesh = display.text;
+                    
+                    // Only try to access geometry if it exists
+                    if (textMesh && textMesh.geometry) {
+                        try {
+                            // Recalculate center offset
+                            textMesh.geometry.computeBoundingBox();
+                            const centerOffset = -(textMesh.geometry.boundingBox.max.x - textMesh.geometry.boundingBox.min.x) / 2;
+                            
+                            // Update position
+                            const yPosition = startY - (index * spacing);
+                            textMesh.position.set(centerOffset, yPosition, 0.02);
+                            console.log(`[VR_SCORE_UI] Repositioned Player ${playerId} to rank ${index} at y=${yPosition}`);
+                        } catch (error) {
+                            console.error(`[VR_SCORE_UI] Error repositioning player ${playerId} text:`, error);
+                        }
+                    }
+                }
+                
+                if (this.playerTagMeshes.has(playerId)) {
+                    // Reposition player tag text
+                    const tagDisplay = this.playerTagMeshes.get(playerId);
+                    const tagMesh = tagDisplay.text;
+                    
+                    // Only try to access geometry if it exists
+                    if (tagMesh && tagMesh.geometry) {
+                        try {
+                            // Recalculate center offset
+                            tagMesh.geometry.computeBoundingBox();
+                            const tagCenterOffset = -(tagMesh.geometry.boundingBox.max.x - tagMesh.geometry.boundingBox.min.x) / 2;
+                            
+                            // Update position
+                            const tagYPosition = tagStartY - (index * tagSpacing);
+                            tagMesh.position.set(tagCenterOffset, tagYPosition, 0.02);
+                        } catch (error) {
+                            console.error(`[VR_SCORE_UI] Error repositioning player ${playerId} tag:`, error);
+                        }
+                    }
+                }
+            });
+        } else {
+            console.warn('[VR_SCORE_UI] Cannot reposition scores - ScoreManager not available');
+        }
     }
 
     update() {

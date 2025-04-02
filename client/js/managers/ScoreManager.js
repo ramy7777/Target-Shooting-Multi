@@ -13,8 +13,23 @@ class ScoreManager {
 
     async initVRScoreUI() {
         try {
-            this.vrScoreUI = new VRScoreUI(this.engine);
-            console.log('[SCORE] VRScoreUI initialized');
+            console.log('[SCORE] Initializing VRScoreUI...');
+            if (!this.vrScoreUI) {
+                this.vrScoreUI = new VRScoreUI(this.engine);
+                console.log('[SCORE] VRScoreUI created');
+            }
+            
+            // Initialize existing scores in VR UI
+            if (this.scores.size > 0) {
+                console.log('[SCORE] Initializing existing scores in VR UI');
+                const sortedScores = Array.from(this.scores.entries())
+                    .sort((a, b) => b[1] - a[1]); // Sort by score descending
+                
+                sortedScores.forEach(([playerId, score], rank) => {
+                    console.log(`[SCORE] Adding Player ${playerId} with score ${score} at rank ${rank} to VR UI`);
+                    this.vrScoreUI.updatePlayerScore(playerId, score, rank);
+                });
+            }
         } catch (error) {
             console.error('[SCORE] Failed to initialize VRScoreUI:', error);
         }
@@ -93,16 +108,52 @@ class ScoreManager {
 
         // Update VR score display if available
         if (this.vrScoreUI) {
-            // Get player's rank
-            const rank = Array.from(this.scores.entries())
-                .sort((a, b) => b[1] - a[1])
-                .findIndex(([id]) => id === playerId);
-            this.vrScoreUI.updatePlayerScore(playerId, newScore, rank);
+            this.updateVRScores();
+        }
+    }
+
+    updateVRScores() {
+        if (!this.vrScoreUI) {
+            console.warn('[SCORE] Cannot update VR scores - VR Score UI not available');
+            return;
+        }
+        
+        try {
+            // Get sorted players by score
+            const sortedScores = Array.from(this.scores.entries())
+                .sort((a, b) => b[1] - a[1]);
+            
+            console.log('[SCORE] Updating VR scores with data:', 
+                sortedScores.map(([id, score]) => `Player ${id}: ${score}`).join(', '));
+            
+            // First, ensure all players exist in the UI
+            for (const [playerId, _] of this.scores) {
+                if (!this.vrScoreUI.textMeshes.has(playerId)) {
+                    console.log(`[SCORE] Player ${playerId} not in VR UI, will be added`);
+                }
+            }
+            
+            // Update each player's score and rank
+            sortedScores.forEach(([playerId, score], rank) => {
+                try {
+                    console.log(`[SCORE] Updating VR score for Player ${playerId}: score=${score}, rank=${rank}`);
+                    this.vrScoreUI.updatePlayerScore(playerId, score, rank);
+                } catch (error) {
+                    console.error(`[SCORE] Error updating VR score for Player ${playerId}:`, error);
+                }
+            });
+            
+            // Ensure UI is repositioned properly
+            this.vrScoreUI.repositionScores();
+        } catch (error) {
+            console.error('[SCORE] Error in updateVRScores:', error);
         }
     }
 
     handleNetworkScoreUpdate(data) {
         const { playerId, score } = data;
+        
+        console.log(`[SCORE] Received network score update for Player ${playerId}: ${score}`);
         
         if (!this.scores.has(playerId)) {
             this.addPlayer(playerId);
@@ -110,12 +161,26 @@ class ScoreManager {
         
         this.scores.set(playerId, score);
         this.updateScoreDisplay();
+        
+        // Update VR Score UI with all scores to ensure proper order
+        if (this.vrScoreUI) {
+            this.updateVRScores();
+        } else {
+            console.warn('[SCORE] VR Score UI not initialized yet');
+        }
     }
 
     removePlayer(playerId) {
         this.scores.delete(playerId);
         this.updateScoreDisplay();
-        this.vrScoreUI.removePlayer(playerId);
+        
+        // Remove player from VR UI
+        if (this.vrScoreUI) {
+            this.vrScoreUI.removePlayer(playerId);
+            
+            // Update remaining players' positions
+            this.updateVRScores();
+        }
     }
 
     update(deltaTime) {
