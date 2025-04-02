@@ -30,11 +30,54 @@ app.get('/three-proxy/*', async (req, res) => {
         // Set correct content type for JavaScript modules
         res.set('Content-Type', 'application/javascript; charset=utf-8');
         
+        // Add proper CORS headers
+        res.set('Access-Control-Allow-Origin', '*');
+        res.set('Access-Control-Allow-Methods', 'GET');
+        res.set('Access-Control-Allow-Headers', 'Content-Type');
+        
         // Stream the response
         response.body.pipe(res);
     } catch (error) {
         console.error(`Proxy error: ${error.message}`);
         res.status(500).send(`Error fetching from unpkg: ${error.message}`);
+    }
+});
+
+// Enhanced proxy specifically for Three.js modules
+app.get('/three/*', async (req, res) => {
+    try {
+        // Check if file exists locally in node_modules first
+        const localPath = path.join(__dirname, '../node_modules', req.url);
+        if (fs.existsSync(localPath) && !fs.statSync(localPath).isDirectory()) {
+            console.log(`Serving Three.js module from local path: ${localPath}`);
+            return res.sendFile(localPath);
+        }
+        
+        // If not found locally, proxy from unpkg
+        const url = req.url.replace('/three/', 'three/');
+        const fullUrl = `https://unpkg.com/${url}`;
+        
+        console.log(`Proxying Three.js module from: ${fullUrl}`);
+        
+        const response = await fetch(fullUrl);
+        
+        if (!response.ok) {
+            throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
+        }
+        
+        // Set correct content type for JavaScript modules
+        res.set('Content-Type', 'application/javascript; charset=utf-8');
+        
+        // Add proper CORS headers
+        res.set('Access-Control-Allow-Origin', '*');
+        res.set('Access-Control-Allow-Methods', 'GET');
+        res.set('Access-Control-Allow-Headers', 'Content-Type');
+        
+        // Stream the response
+        response.body.pipe(res);
+    } catch (error) {
+        console.error(`Three.js proxy error: ${error.message}`);
+        res.status(500).send(`Error fetching Three.js module: ${error.message}`);
     }
 });
 
@@ -48,13 +91,48 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, '../client')));
 
 // Serve Three.js from node_modules
-app.use('/three', express.static(path.join(__dirname, '../node_modules/three')));
+app.use('/three', (req, res, next) => {
+    // Add CORS headers for Three.js module files
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    next();
+}, express.static(path.join(__dirname, '../node_modules/three')));
 
 // Only use HTTPS in development
 let server;
 if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
     console.log("Starting server in production mode with HTTP");
     server = require('http').createServer(app);
+    
+    // Additional production-specific configuration for Render.com
+    if (process.env.RENDER) {
+        console.log("Running on Render.com - Adding additional production configurations");
+        
+        // Set trust proxy to handle forwarded headers properly
+        app.set('trust proxy', true);
+        
+        // Log request origin information for debugging
+        app.use((req, res, next) => {
+            console.log(`Request origin: ${req.get('origin') || 'No origin'}`);
+            console.log(`Referer: ${req.get('referer') || 'No referer'}`);
+            next();
+        });
+        
+        // Add CORS headers for all responses in production
+        app.use((req, res, next) => {
+            res.header('Access-Control-Allow-Origin', '*');
+            res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+            res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+            res.header('Access-Control-Max-Age', '86400'); // 24 hours
+            
+            // Handle preflight requests
+            if (req.method === 'OPTIONS') {
+                return res.status(204).end();
+            }
+            next();
+        });
+    }
 } else {
     console.log("Starting server in development mode with HTTPS");
     try {
