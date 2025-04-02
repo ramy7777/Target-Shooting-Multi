@@ -4,16 +4,38 @@ const path = require('path');
 const express = require('express');
 const WebSocket = require('ws');
 const ip = require('ip');
+const fetch = require('node-fetch');
 
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Enable CORS for remote debugging
+// Enable CORS for all requests
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE');
     res.header('Access-Control-Allow-Headers', 'Content-Type');
     next();
+});
+
+// Proxy for Three.js modules
+app.get('/three-proxy/*', async (req, res) => {
+    try {
+        const url = req.url.replace('/three-proxy/', '');
+        const fullUrl = `https://unpkg.com/${url}`;
+        
+        console.log(`Proxying request to: ${fullUrl}`);
+        
+        const response = await fetch(fullUrl);
+        
+        // Set correct content type for JavaScript modules
+        res.set('Content-Type', 'application/javascript; charset=utf-8');
+        
+        // Stream the response
+        response.body.pipe(res);
+    } catch (error) {
+        console.error(`Proxy error: ${error.message}`);
+        res.status(500).send(`Error fetching from unpkg: ${error.message}`);
+    }
 });
 
 // Log all requests
@@ -24,6 +46,9 @@ app.use((req, res, next) => {
 
 // Serve static files from the client directory
 app.use(express.static(path.join(__dirname, '../client')));
+
+// Serve Three.js from node_modules
+app.use('/three', express.static(path.join(__dirname, '../node_modules/three')));
 
 // Only use HTTPS in development
 let server;
@@ -173,6 +198,19 @@ wss.on('connection', (ws) => {
                     }, ws);
                     break;
 
+                case 'scoreUpdate':
+                    // Store the score with the client data
+                    if (clients.get(ws)) {
+                        clients.get(ws).score = data.data.score;
+                    }
+                    // Broadcast score update to all clients
+                    broadcastToRoom(client.roomCode, {
+                        type: 'scoreUpdate',
+                        senderId: client.id,
+                        data: data.data
+                    }, null); // Include sender to ensure confirmation
+                    break;
+
                 // Voice chat signaling
                 case 'voice_ready':
                 case 'voice_offer':
@@ -281,6 +319,18 @@ function handleJoinSession(ws, client, roomCode) {
                     type: 'playerJoined',
                     id: existingClientData.id
                 }));
+                
+                // If we have score data for this player, send it to the new client
+                if (existingClientData.score !== undefined) {
+                    ws.send(JSON.stringify({
+                        type: 'scoreUpdate',
+                        senderId: existingClientData.id,
+                        data: {
+                            playerId: existingClientData.id,
+                            score: existingClientData.score
+                        }
+                    }));
+                }
             }
         });
 
@@ -353,6 +403,23 @@ function handleAutoJoin(ws, client) {
     };
     console.log('Sending autoJoinConfirm:', confirmMessage);
     ws.send(JSON.stringify(confirmMessage));
+
+    // Send existing player scores to the new client
+    targetRoom.forEach(existingClient => {
+        if (existingClient !== ws) {
+            const existingClientData = clients.get(existingClient);
+            if (existingClientData.score !== undefined) {
+                ws.send(JSON.stringify({
+                    type: 'scoreUpdate',
+                    senderId: existingClientData.id,
+                    data: {
+                        playerId: existingClientData.id,
+                        score: existingClientData.score
+                    }
+                }));
+            }
+        }
+    });
 
     // Notify other clients in the room
     broadcastToRoom(targetRoomCode, {

@@ -6,9 +6,19 @@ export class World {
     constructor(engine) {
         this.engine = engine;
         this.objects = new Set();
-        this.clock = new THREE.Clock();
         this.materials = new Map(); // Store reusable materials
-        this.gltfLoader = new GLTFLoader(); // Add GLTFLoader instance
+        this.clock = new THREE.Clock(); // Create a local clock for animations
+        this.roomDimensions = {
+            width: 20,
+            height: 10,
+            depth: 20,
+            y: 0
+        };
+        
+        // Initialize loader
+        this.gltfLoader = new GLTFLoader();
+        
+        // Set up the environment
         this.setupEnvironment();
     }
 
@@ -352,13 +362,31 @@ export class World {
         this.holographicRoom = roomGroup;
 
         // Add animation to update shader time
-        this.engine.animationManager.addAnimation(() => {
-            roomGroup.children.forEach(mesh => {
-                if (mesh.material.uniforms) {
-                    mesh.material.uniforms.time.value = this.clock.getElapsedTime();
-                }
+        if (this.engine.animationManager) {
+            this.engine.animationManager.addAnimation(() => {
+                roomGroup.children.forEach(mesh => {
+                    if (mesh.material.uniforms) {
+                        mesh.material.uniforms.time.value = this.clock.getElapsedTime();
+                    }
+                });
             });
-        });
+        } else {
+            // Fallback if animationManager doesn't exist
+            console.log('[WORLD] AnimationManager not available, setting up manual shader update');
+            
+            // Set up a function to update the shader uniforms directly in the render loop
+            const updateShaders = () => {
+                if (roomGroup) {
+                    roomGroup.children.forEach(mesh => {
+                        if (mesh.material && mesh.material.uniforms) {
+                            mesh.material.uniforms.time.value = this.engine.clock.getElapsedTime();
+                        }
+                    });
+                }
+                requestAnimationFrame(updateShaders);
+            };
+            updateShaders();
+        }
     }
 
     createBird() {
