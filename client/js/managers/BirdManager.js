@@ -176,6 +176,11 @@ export class BirdManager {
                             this.engine.scoreManager?.updateScore(bullet.shooterId, 10);
                             // Play sound for host's own hits
                             this.engine.audioManager?.playBirdDestruction();
+                            
+                            // Make sure score gets updated for all clients
+                            const hostScore = this.engine.scoreManager?.scores.get(bullet.shooterId) || 0;
+                            this.engine.networkManager.broadcastScoreUpdate(bullet.shooterId, hostScore);
+                            console.log(`[BIRD] Host broadcasting score update: Player ${bullet.shooterId} = ${hostScore}`);
                         }
                         
                         // Broadcast the hit to all clients
@@ -228,17 +233,47 @@ export class BirdManager {
                 return;
             }
 
+            console.log('[BIRD] Processing network bird hit:', data);
+            
+            // Always play sound effect for bird destruction, regardless of shooter
+            this.engine.audioManager?.playBirdDestruction();
+
             // Only update score if:
             // 1. We're a client (not host)
-            // 2. The bullet was from us
+            // 2. The bullet was shot by us
             // 3. We have a score manager
             if (!this.engine.networkManager.isHost && 
                 bulletShooterId === this.engine.networkManager.localPlayerId &&
                 this.engine.scoreManager) {
                 console.log('[BIRD] Updating score for client hit:', bulletShooterId, points);
                 this.engine.scoreManager.updateScore(bulletShooterId, points);
-                // Play sound for client's own hits
-                this.engine.audioManager?.playBirdDestruction();
+                
+                // Explicitly broadcast our updated score to ensure it's visible to all players
+                const clientScore = this.engine.scoreManager.scores.get(bulletShooterId) || 0;
+                this.engine.networkManager.broadcastScoreUpdate(bulletShooterId, clientScore);
+                console.log(`[BIRD] Client broadcasting score update: Player ${bulletShooterId} = ${clientScore}`);
+            }
+            
+            // Update the shooter's score in our local score manager
+            // This ensures we show scores for shots we didn't make
+            if (this.engine.scoreManager && bulletShooterId !== this.engine.networkManager.localPlayerId) {
+                // If we don't have this player in our scores yet, add them
+                if (!this.engine.scoreManager.scores.has(bulletShooterId)) {
+                    this.engine.scoreManager.addPlayer(bulletShooterId);
+                }
+                
+                // Calculate the new score without calling updateScore (which might trigger broadcasts)
+                const currentScore = this.engine.scoreManager.scores.get(bulletShooterId) || 0;
+                const newScore = currentScore + points;
+                
+                console.log(`[BIRD] Updating remote player score: Player ${bulletShooterId} = ${newScore}`);
+                this.engine.scoreManager.scores.set(bulletShooterId, newScore);
+                this.engine.scoreManager.updateScoreDisplay();
+                
+                // Update VR scores if available
+                if (this.engine.scoreManager.vrScoreUI) {
+                    this.engine.scoreManager.updateVRScores();
+                }
             }
 
             // Handle visual effects

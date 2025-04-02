@@ -289,7 +289,20 @@ export class NetworkManager {
             case 'scoreUpdate':
                 if (this.engine.scoreManager) {
                     console.log('[NETWORK] Received score update:', data);
+                    
+                    // Force add the player if they don't exist in our score list yet
+                    if (!this.engine.scoreManager.scores.has(data.data.playerId)) {
+                        this.engine.scoreManager.addPlayer(data.data.playerId);
+                    }
+                    
+                    // Update the score
                     this.engine.scoreManager.handleNetworkScoreUpdate(data.data);
+                    
+                    // If we're the host, make sure the score gets broadcast to all clients
+                    if (this.isHost && data.senderId !== this.localPlayerId) {
+                        console.log('[NETWORK] Host relaying score update to all clients');
+                        this.broadcastScoreUpdate(data.data.playerId, data.data.score);
+                    }
                 }
                 break;
 
@@ -374,24 +387,24 @@ export class NetworkManager {
         
         console.log(`[NETWORK] Broadcasting score update: Player ${playerId} = ${score}`);
         
-        // If we're the host, send to all clients
-        if (this.isHost) {
-            this.send({
-                type: 'scoreUpdate',
-                data: {
-                    playerId: playerId,
-                    score: score
-                }
-            });
-        } else {
-            // If we're a client, send to the host to relay to everyone
-            this.send({
-                type: 'scoreUpdate',
-                data: {
-                    playerId: playerId,
-                    score: score
-                }
-            });
+        // Send the score update as is
+        this.send({
+            type: 'scoreUpdate',
+            data: {
+                playerId: playerId,
+                score: score
+            }
+        });
+        
+        // Make sure our local score display is updated too
+        if (this.engine.scoreManager && !this.engine.scoreManager.scores.has(playerId)) {
+            this.engine.scoreManager.addPlayer(playerId);
+            this.engine.scoreManager.scores.set(playerId, score);
+            this.engine.scoreManager.updateScoreDisplay();
+            
+            if (this.engine.scoreManager.vrScoreUI) {
+                this.engine.scoreManager.updateVRScores();
+            }
         }
     }
 

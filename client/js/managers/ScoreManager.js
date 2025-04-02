@@ -155,19 +155,34 @@ class ScoreManager {
         
         console.log(`[SCORE] Received network score update for Player ${playerId}: ${score}`);
         
+        // Enhanced debugging
+        console.log(`[SCORE] Current scores before update:`, 
+            Array.from(this.scores.entries()).map(([id, val]) => `Player ${id}: ${val}`).join(', '));
+        
+        // Always add player if not present
         if (!this.scores.has(playerId)) {
+            console.log(`[SCORE] Adding new player ${playerId} to score table`);
             this.addPlayer(playerId);
         }
         
+        // Update the score
         this.scores.set(playerId, score);
+        console.log(`[SCORE] Updated score for Player ${playerId} to ${score}`);
+        
+        // Refresh the UI
         this.updateScoreDisplay();
         
         // Update VR Score UI with all scores to ensure proper order
         if (this.vrScoreUI) {
+            console.log(`[SCORE] Updating VR score display after network update`);
             this.updateVRScores();
         } else {
             console.warn('[SCORE] VR Score UI not initialized yet');
         }
+        
+        // Log final state for debugging
+        console.log(`[SCORE] Current scores after update:`, 
+            Array.from(this.scores.entries()).map(([id, val]) => `Player ${id}: ${val}`).join(', '));
     }
 
     removePlayer(playerId) {
