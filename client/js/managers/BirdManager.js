@@ -12,39 +12,42 @@ export class BirdManager {
 
         // Get room dimensions from the platform size
         const platform = this.engine.world?.ground;
-        let roomDimensions;
+        let platformDimensions;
         if (platform) {
             const boundingBox = new THREE.Box3().setFromObject(platform);
             const size = boundingBox.getSize(new THREE.Vector3());
-            roomDimensions = {
-                width: size.x * 1.2,    // 20% larger than platform
-                height: Math.max(size.x, size.z) * 0.8, // Height proportional to width/depth
-                depth: size.z * 1.2,    // 20% larger than platform
-                y: Math.max(size.x, size.z) * 0.4  // Half of height
+            platformDimensions = {
+                width: size.x,
+                depth: size.z,
+                y: platform.position.y // Use the platform's y position
             };
+            console.log('[BIRD] Platform dimensions:', platformDimensions);
         } else {
             // Fallback dimensions if platform not loaded
-            roomDimensions = {
-                width: 5,
-                height: 3,
-                depth: 3,
-                y: 2
+            platformDimensions = {
+                width: 10,
+                depth: 10,
+                y: 0.5
             };
+            console.warn('[BIRD] Platform not found, using fallback dimensions');
         }
 
-        // Calculate spawn boundaries to be inside the border lines (2% inset from edges)
-        const borderInset = 0.02; // Matches the border thickness in shader (0.02)
-        const safetyPadding = 0.1; // Additional 10cm safety padding for sphere size
-        const totalPadding = borderInset + safetyPadding;
+        // Calculate spawn boundaries to be directly above the platform with smaller inset
+        const insetPercentage = 0.1; // 10% inset from platform edges
+        const heightOffset = 0.5; // How high above the platform to start spawning
+        const spawnHeight = 1.5; // How tall the spawn area should be
 
+        // Calculate a spawn area that's 3x smaller than before
         this.spawnBoundary = {
-            minX: -(roomDimensions.width / 2) + totalPadding,
-            maxX: (roomDimensions.width / 2) - totalPadding,
-            minY: roomDimensions.y + totalPadding - 1.5,
-            maxY: roomDimensions.y + roomDimensions.height - totalPadding - 1.5,
-            minZ: -(roomDimensions.depth / 2) + totalPadding,
-            maxZ: (roomDimensions.depth / 2) - totalPadding
+            minX: -(platformDimensions.width / 12), // 1/3 of previous value (was 1/4)
+            maxX: (platformDimensions.width / 12),  // 1/3 of previous value (was 1/4)
+            minY: platformDimensions.y + heightOffset, 
+            maxY: platformDimensions.y + heightOffset + spawnHeight,
+            minZ: -(platformDimensions.depth / 12), // 1/3 of previous value (was 1/4)
+            maxZ: (platformDimensions.depth / 12)   // 1/3 of previous value (was 1/4)
         };
+        
+        console.log('[BIRD] Spawn boundaries (3x smaller):', this.spawnBoundary);
     }
 
     update(delta) {

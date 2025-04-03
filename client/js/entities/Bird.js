@@ -113,15 +113,31 @@ export class Bird extends THREE.Object3D {
         // Set initial position
         this.position.copy(position);
         this.spawnTime = Date.now();
-        this.lifespan = 50000; // 50 seconds lifespan
-
-        // Set up collision box
+        this.lifespan = 40000; // 40 seconds lifespan
+        
+        // Initialize movement parameters
+        this.initialPosition = position.clone();
+        this.movementSpeed = THREE.MathUtils.randFloat(0.3, 0.6); // Restored to original speed
+        this.patternType = Math.floor(Math.random() * 3); // 0: Circular, 1: Figure-8, 2: Sine wave
+        this.patternScale = THREE.MathUtils.randFloat(0.5, 1.5); // Restored to original scale
+        this.patternPhase = Math.random() * Math.PI * 2;
+        this.timeOffset = Math.random() * 1000;
+        
+        // Movement direction - restored to original spread
+        this.movementDirection = new THREE.Vector3(
+            THREE.MathUtils.randFloatSpread(0.5),
+            0,
+            THREE.MathUtils.randFloatSpread(0.5)
+        ).normalize();
+        
+        // Set bounding box for collision detection
         this.boundingBox = new THREE.Box3();
         this.updateBoundingBox();
     }
 
     update(deltaTime) {
         const currentTime = Date.now();
+        const elapsedTime = (currentTime - this.spawnTime + this.timeOffset) / 1000; // In seconds
 
         // Check lifespan
         if (currentTime - this.spawnTime > this.lifespan) {
@@ -133,10 +149,51 @@ export class Bird extends THREE.Object3D {
             this.material.uniforms.time.value += deltaTime;
         }
         
+        // Apply movement pattern based on pattern type
+        this.applyMovementPattern(elapsedTime);
+        
         // Update bounding box
         this.updateBoundingBox();
 
         return false;
+    }
+    
+    applyMovementPattern(elapsedTime) {
+        // Calculate normalized time for patterns (0 to 1, cycles over time)
+        const t = elapsedTime * this.movementSpeed;
+        
+        // Start with the initial position
+        const newPosition = this.initialPosition.clone();
+        
+        switch(this.patternType) {
+            case 0: // Circular pattern
+                const radius = this.patternScale;
+                const circleX = Math.cos(t + this.patternPhase) * radius;
+                const circleZ = Math.sin(t + this.patternPhase) * radius;
+                newPosition.x += circleX;
+                newPosition.z += circleZ;
+                break;
+                
+            case 1: // Figure-8 pattern
+                const scale = this.patternScale * 1.2; // Restored original multiplier
+                const figureX = Math.sin(t + this.patternPhase) * scale;
+                const figureZ = Math.sin(2 * (t + this.patternPhase)) * scale * 0.5; // Restored original value
+                newPosition.x += figureX;
+                newPosition.z += figureZ;
+                break;
+                
+            case 2: // Sine wave pattern with horizontal movement
+                const waveScale = this.patternScale;
+                const baseOffset = t * 0.5; // Restored original movement speed
+                const verticalOffset = Math.sin(t * 2 + this.patternPhase) * waveScale * 0.3; // Restored original values
+                newPosition.x += this.movementDirection.x * baseOffset;
+                newPosition.y += verticalOffset;
+                newPosition.z += this.movementDirection.z * baseOffset;
+                break;
+        }
+        
+        // Update the bird's position
+        this.position.copy(newPosition);
     }
 
     takeDamage(damage) {

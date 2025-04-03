@@ -165,30 +165,31 @@ export class World {
 
     async loadPlatformModel() {
         try {
-            console.log('[WORLD] Loading platform model...');
-            const gltf = await this.gltfLoader.loadAsync('/assets/models/platform/base_basic_pbr.glb');
+            console.log('[WORLD] Loading simple platform model...');
+            const gltf = await this.gltfLoader.loadAsync('/assets/models/platform/simple platform.glb');
             const platform = gltf.scene;
             
-            // Keep the same scale as before (1.52)
-            platform.scale.set(1.52, 1.52, 1.52);
+            // Increase scale by 1 unit (from 2.5 to 3.5)
+            platform.scale.set(3.5, 3.5, 3.5);
             
-            // Keep the same floor-level position
+            // Position at floor level and lower by 0.5 units (from 0.5 to 0)
             platform.position.set(0, 0, 0);
             
-            // Keep the same rotations
-            platform.rotation.x = -Math.PI / 2;  // Lie flat
-            platform.rotation.y = Math.PI / 2;   // 90 degrees Y rotation
-            platform.rotation.z = Math.PI / 2;   // 90 degrees Z rotation
+            // Set proper rotation
+            platform.rotation.x = 0;  // No need to rotate on X as the model is already flat
+            platform.rotation.y = 0;  // No rotation needed
+            platform.rotation.z = 0;  // No rotation needed
             
             this.engine.scene.add(platform);
-            console.log('[WORLD] Platform model loaded successfully');
+            console.log('[WORLD] Simple platform model loaded successfully');
             
             // Calculate platform size
             const boundingBox = new THREE.Box3().setFromObject(platform);
             const size = boundingBox.getSize(new THREE.Vector3());
+            console.log('[WORLD] Platform size:', size);
             
-            // Create holographic room based on platform size
-            this.createHolographicRoom(size.x, size.z);
+            // Do not create holographic room
+            // this.createHolographicRoom(size.x, size.z);
             
             // Apply materials and enable shadows
             platform.traverse((child) => {
@@ -196,16 +197,19 @@ export class World {
                     child.castShadow = true;
                     child.receiveShadow = true;
                     
-                    // Enhance the blue material properties
+                    // Enhance material properties
                     if (child.material) {
-                        child.material.metalness = 0.8;  // More metallic look
-                        child.material.roughness = 0.2;  // More shiny
-                        child.material.envMapIntensity = 1.5;  // Stronger reflections
+                        // Make sure the material retains its original appearance
+                        child.material.metalness = 0.6;  
+                        child.material.roughness = 0.3;
+                        child.material.envMapIntensity = 1.2;
                     }
                 }
             });
         } catch (error) {
             console.error('[WORLD] Error loading platform model:', error);
+            // Fall back to a simple ground plane if model fails to load
+            this.createFallbackGround();
         }
     }
 
