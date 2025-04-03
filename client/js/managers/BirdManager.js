@@ -452,40 +452,47 @@ export class BirdManager {
 
             console.log('[BIRD] Processing network bird hit:', data);
             
-            // Skip duplicating effects if we already created effects locally as the shooter
-            const isLocalShooter = bulletShooterId === this.engine.networkManager.localPlayerId;
+            // Check if this is a host message for its own shot (avoid double processing)
+            const isLocalPlayer = bulletShooterId === this.engine.networkManager.localPlayerId;
+            const isHostSelfMessage = isLocalPlayer && this.engine.networkManager.isHost;
+            
+            // Skip this entire function for the host's own hits to avoid duplicate processing
+            // The host already processed these locally in handleBulletCollision
+            if (isHostSelfMessage) {
+                console.log('[BIRD] Host skipping network hit processing for own shot to prevent duplicates');
+                return;
+            }
             
             // Extract position data for effects
             const explosionPos = new THREE.Vector3().fromArray(position);
             
             // Create explosion effect for everyone EXCEPT the shooter (who already saw it)
-            if (!isLocalShooter && this.engine.particleManager) {
+            if (!isLocalPlayer && this.engine.particleManager) {
                 this.engine.particleManager.createExplosion(explosionPos);
                 console.log(`[BIRD] Created network hit explosion at position [${explosionPos.x.toFixed(2)}, ${explosionPos.y.toFixed(2)}, ${explosionPos.z.toFixed(2)}]`);
-            } else if (isLocalShooter) {
+            } else if (isLocalPlayer) {
                 console.log('[BIRD] Skipping explosion for local shooter who already saw it');
             } else {
                 console.warn('[BIRD] Unable to create explosion: ParticleManager not available');
             }
             
             // Play sound for everyone EXCEPT the shooter (who already heard it)
-            if (!isLocalShooter && this.engine.audioManager) {
+            if (!isLocalPlayer && this.engine.audioManager) {
                 this.engine.audioManager.playBirdDestruction();
                 console.log('[BIRD] Played network hit sound');
-            } else if (isLocalShooter) {
+            } else if (isLocalPlayer) {
                 console.log('[BIRD] Skipping sound for local shooter who already heard it');
             } else {
                 console.warn('[BIRD] Unable to play sound: AudioManager not available');
             }
             
             // Add haptic feedback for VR for everyone EXCEPT the shooter
-            if (!isLocalShooter) {
+            if (!isLocalPlayer) {
                 this.triggerHapticFeedback(0.8, 100);
             }
 
-            // IMPORTANT: Always update score when we get a confirmed hit from the server
-            // This ensures the shooter gets points even if the bird positions were slightly different
-            if (this.engine.scoreManager) {
+            // Update scores: Skip score update for host's own hit to avoid double counting
+            if (this.engine.scoreManager && !isHostSelfMessage) {
                 // If we don't have this player in our scores yet, add them
                 if (!this.engine.scoreManager.scores.has(bulletShooterId)) {
                     console.log(`[BIRD] Adding new player ${bulletShooterId} to score table`);
@@ -506,7 +513,7 @@ export class BirdManager {
                 }
             }
 
-            // Remove the bird if it still exists
+            // If bird still exists, remove it
             if (this.birds.has(birdId)) {
                 console.log(`[BIRD] Removing bird ${birdId} after network hit confirmation`);
                 this.removeBird(birdId);

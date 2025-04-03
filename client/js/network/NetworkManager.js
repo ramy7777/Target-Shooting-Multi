@@ -117,8 +117,14 @@ export class NetworkManager {
             case 'birdHit':
                 // CRITICAL PRIORITY - Process immediately
                 console.log('[NETWORK] Bird hit confirmed by server:', message.data.birdId);
-                if (this.engine.birdManager) {
-                    // Immediate sync for effects
+                
+                // Special handling for host messages
+                const isHostSelfMessage = this.isHost && message.data.bulletShooterId === this.localPlayerId;
+                
+                if (isHostSelfMessage) {
+                    console.log('[NETWORK] Host skipping processing of own hit to avoid duplicate effects');
+                } else if (this.engine.birdManager) {
+                    // Process normally for non-host or other player hits
                     this.engine.birdManager.handleNetworkBirdHit(message.data);
                 }
                 break;
