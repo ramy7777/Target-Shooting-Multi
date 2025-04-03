@@ -10,6 +10,7 @@ export class BirdManager {
         this.maxBirds = 6; // Maximum number of birds allowed (reduced from 10)
         this.isSpawning = false; // Will be set to true when startSpawning is called
         this._lastRemovedBirdIdByNetwork = null;
+        this.lastHostHitData = null; // Track last hit processed by host to prevent duplicates
         
         // Enable debug visualization
         this.debug = false; // Set to false to hide bounding boxes
@@ -342,6 +343,9 @@ export class BirdManager {
                 if (intersection) {
                     console.log(`[BIRD] Collision detected between bullet and bird ${id}`);
                     
+                    // Track the bird as being processed to prevent duplicate handling
+                    bird.isBeingProcessed = true;
+                    
                     // Get the bird's position for the explosion effect
                     const explosionPosition = bird.position.clone();
 
@@ -380,6 +384,13 @@ export class BirdManager {
                     }
                     // If we're the host
                     else if (this.engine.networkManager?.isHost) {
+                        // Store the hit data to prevent double processing
+                        this.lastHostHitData = {
+                            birdId: id,
+                            bulletShooterId: bullet.shooterId,
+                            timestamp: Date.now()
+                        };
+                        
                         // Only update score if it's our own bullet
                         if (bullet.shooterId === this.engine.networkManager.localPlayerId) {
                             console.log('[BIRD] Host updating own score for hit');
@@ -451,6 +462,20 @@ export class BirdManager {
             }
 
             console.log('[BIRD] Processing network bird hit:', data);
+            
+            // If we're the host, check if this is a duplicate of our own hit we already processed
+            if (this.engine.networkManager.isHost && this.lastHostHitData) {
+                const isDuplicate = (
+                    this.lastHostHitData.birdId === birdId && 
+                    this.lastHostHitData.bulletShooterId === bulletShooterId &&
+                    Date.now() - this.lastHostHitData.timestamp < 1000 // Within 1 second
+                );
+                
+                if (isDuplicate) {
+                    console.log('[BIRD] Host detected duplicate hit message, ignoring:', data);
+                    return;
+                }
+            }
             
             // Check if this is a host message for its own shot (avoid double processing)
             const isLocalPlayer = bulletShooterId === this.engine.networkManager.localPlayerId;

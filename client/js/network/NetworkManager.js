@@ -136,6 +136,23 @@ export class NetworkManager {
                     // Validate hit (just accepting for now, could add more validation)
                     const { birdId, bulletShooterId, position } = message.data;
                     
+                    // Check if we've recently processed a hit for this bird to prevent duplicates
+                    const isDuplicate = this.engine.birdManager.lastHostHitData && 
+                        this.engine.birdManager.lastHostHitData.birdId === birdId &&
+                        Date.now() - this.engine.birdManager.lastHostHitData.timestamp < 1000;
+                    
+                    if (isDuplicate) {
+                        console.log('[NETWORK] Host rejecting duplicate hit attempt for bird:', birdId);
+                        return;
+                    }
+                    
+                    // Track this attempt to prevent duplicates
+                    this.engine.birdManager.lastHostHitData = {
+                        birdId,
+                        bulletShooterId,
+                        timestamp: Date.now()
+                    };
+                    
                     // Broadcast confirmed hit to all players
                     this.send({
                         type: 'birdHit',
@@ -153,6 +170,11 @@ export class NetworkManager {
                         // Broadcast the updated score
                         const score = this.engine.scoreManager.scores.get(bulletShooterId) || 0;
                         this.broadcastScoreUpdate(bulletShooterId, score);
+                    }
+                    
+                    // Ensure the bird gets removed locally
+                    if (this.engine.birdManager.birds.has(birdId)) {
+                        this.engine.birdManager.removeBird(birdId);
                     }
                 }
                 break;
