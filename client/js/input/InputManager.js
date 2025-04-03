@@ -57,8 +57,9 @@ export class InputManager {
 
         // Setup mouse controls
         document.addEventListener('mousemove', (event) => {
-            this.mouse.x = event.clientX;
-            this.mouse.y = event.clientY;
+            // Convert mouse position to normalized device coordinates (-1 to +1)
+            this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
             
             // Update crosshair position
             if (this.crosshairElement) {
@@ -69,7 +70,7 @@ export class InputManager {
         document.addEventListener('mousedown', (event) => {
             if (event.button === 0) { // Left click
                 this.mouseButtons.left = true;
-                this.handlePCShoot();
+                this.handleMouseClick();
             }
         });
         
@@ -170,6 +171,7 @@ export class InputManager {
         // Only update controllers in VR mode
         if (!this.engine.renderer.xr.isPresenting) {
             this.updateKeyboardInput(delta);
+            this.updateMouseHover(); // Check for UI hover interactions
             return;
         }
         
@@ -346,19 +348,80 @@ export class InputManager {
         }
     }
 
-    handlePCShoot() {
+    handleMouseClick() {
         const now = Date.now();
         if (now - this.lastMouseClick < this.mouseClickCooldown) {
             return; // Still in cooldown
         }
         this.lastMouseClick = now;
 
+        // First, check if we're clicking a UI element (like the start button)
+        if (this.checkUIInteraction()) {
+            return; // Clicked on UI, don't shoot
+        }
+
+        // If not clicking UI, handle shooting
+        this.handlePCShoot();
+    }
+
+    checkUIInteraction() {
+        if (!this.engine.camera) return false;
+        
+        this.raycaster.setFromCamera(this.mouse, this.engine.camera);
+        
+        // Check for intersections with the start button
+        const startButton = this.engine.scoreManager?.vrScoreUI?.startButton;
+        if (startButton) {
+            const intersects = this.raycaster.intersectObject(startButton, true);
+            
+            if (intersects.length > 0) {
+                console.log('[INPUT] Clicked on start button');
+                // If we're the host, trigger game start
+                if (this.engine.networkManager?.isHost) {
+                    this.engine.uiManager.handleGameStart();
+                }
+                // Visual feedback
+                if (startButton.userData.materials) {
+                    startButton.material = startButton.userData.materials.pressed;
+                    setTimeout(() => {
+                        startButton.material = startButton.userData.materials.default;
+                    }, 200);
+                }
+                return true; // Interaction handled
+            }
+        }
+        
+        return false; // No UI interaction
+    }
+
+    updateMouseHover() {
+        if (!this.engine.camera) return;
+        
+        this.raycaster.setFromCamera(this.mouse, this.engine.camera);
+        
+        // Check hover state for start button
+        const startButton = this.engine.scoreManager?.vrScoreUI?.startButton;
+        if (startButton && startButton.userData.materials) {
+            const intersects = this.raycaster.intersectObject(startButton, true);
+            
+            // Only update if state is changing
+            const isHovering = intersects.length > 0;
+            const currentMaterial = startButton.material;
+            const defaultMaterial = startButton.userData.materials.default;
+            const hoverMaterial = startButton.userData.materials.hover;
+            
+            if (isHovering && currentMaterial === defaultMaterial) {
+                startButton.material = hoverMaterial;
+            } else if (!isHovering && currentMaterial === hoverMaterial) {
+                startButton.material = defaultMaterial;
+            }
+        }
+    }
+
+    handlePCShoot() {
         // Calculate ray from camera through mouse position
         const raycaster = new THREE.Raycaster();
-        const mouseNDC = new THREE.Vector2(
-            (this.mouse.x / window.innerWidth) * 2 - 1,
-            -(this.mouse.y / window.innerHeight) * 2 + 1
-        );
+        const mouseNDC = new THREE.Vector2(this.mouse.x, this.mouse.y);
         
         // Set the raycaster using the camera and mouse position
         raycaster.setFromCamera(mouseNDC, this.engine.camera);

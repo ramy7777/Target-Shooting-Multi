@@ -221,13 +221,23 @@ wss.on('connection', (ws) => {
                         });
 
                         if (host) {
+                            console.log(`Server forwarding birdHitAttempt from client ${client.id} to host for validation`);
+                            
+                            // Add a flag to indicate this is a client hit that should be trusted
+                            // This helps counter position differences between client and host
+                            data.data.clientHitDetected = true;
+                            
                             // Forward the hit attempt to the host for validation
                             host.send(JSON.stringify({
                                 type: 'birdHitAttempt',
                                 senderId: client.id,
                                 data: data.data
                             }));
+                        } else {
+                            console.error(`Server couldn't find host in room ${client.roomCode} for birdHitAttempt`);
                         }
+                    } else {
+                        console.error(`Server couldn't find room ${client.roomCode} for birdHitAttempt`);
                     }
                     break;
 
@@ -235,15 +245,20 @@ wss.on('connection', (ws) => {
                     // Only process confirmed hits from the host
                     const clientData = clients.get(ws);
                     if (clientData && clientData.isHost) {
+                        console.log(`Server broadcasting validated birdHit from host to all clients in room ${clientData.roomCode}`);
+                        // Send to all clients including sender
                         broadcastToRoom(client.roomCode, {
                             type: 'birdHit',
                             senderId: client.id,
                             data: data.data
-                        }, null); // Send to all clients including sender
+                        }, null);
+                    } else {
+                        console.error(`Server received birdHit from non-host client ${client.id}`);
                     }
                     break;
 
                 case 'birdRemoved':
+                    console.log(`Server broadcasting birdRemoved from client ${client.id} for bird ${data.data.id}`);
                     broadcastToRoom(client.roomCode, {
                         type: 'birdRemoved',
                         senderId: client.id,
@@ -288,8 +303,10 @@ wss.on('connection', (ws) => {
                     // Store the score with the client data
                     if (clients.get(ws)) {
                         clients.get(ws).score = data.data.score;
+                        console.log(`Server updated score for client ${client.id} to ${data.data.score}`);
                     }
                     // Broadcast score update to all clients
+                    console.log(`Server broadcasting scoreUpdate from client ${client.id} to all in room ${client.roomCode}`);
                     broadcastToRoom(client.roomCode, {
                         type: 'scoreUpdate',
                         senderId: client.id,

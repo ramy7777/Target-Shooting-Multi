@@ -182,30 +182,47 @@ export class VRScoreUI {
         this.engine.scene.add(this.playerTagsGroup);
         console.log('[UI] Added UI elements to scene');
 
-        // Wait for NetworkManager to be initialized and host status to be confirmed
+        // Wait for NetworkManager to be initialized
         await new Promise(resolve => {
-            const checkHostStatus = () => {
+            const checkNetworkStatus = () => {
                 if (this.engine.networkManager && this.engine.networkManager.connected) {
-                    // If we're connected and have host status (true or false), we can proceed
-                    if (typeof this.engine.networkManager.isHost === 'boolean' && this.engine.networkManager.currentRoom) {
-                        console.log('[UI] Host status confirmed:', this.engine.networkManager.isHost);
-                        resolve();
-                    } else {
-                        setTimeout(checkHostStatus, 100);
-                    }
+                    console.log('[UI] Network connection confirmed');
+                    resolve();
                 } else {
-                    setTimeout(checkHostStatus, 100);
+                    setTimeout(checkNetworkStatus, 100);
                 }
             };
-            checkHostStatus();
+            checkNetworkStatus();
         });
 
-        // Create start button only for host
-        if (this.engine.networkManager.isHost) {
-            await this.createStartButton();
-            console.log('[UI] Start button created for host');
-        } else {
-            console.log('[UI] Client - skipping start button creation');
+        // Create start button for all players, but it will only function for the host
+        await this.createStartButton();
+        console.log('[UI] Start button created');
+        
+        // If not host, add a message to indicate only host can start the game
+        if (!this.engine.networkManager.isHost && this.font) {
+            const infoGeometry = new TextGeometry('Wait for host to start', {
+                font: this.font,
+                size: 0.12,
+                height: 0,
+                curveSegments: 4,
+                bevelEnabled: false
+            });
+
+            const infoMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                emissive: 0xffffff,
+                emissiveIntensity: 0.7,
+                metalness: 0,
+                roughness: 0.2
+            });
+
+            infoGeometry.computeBoundingBox();
+            const centerOffset = -(infoGeometry.boundingBox.max.x - infoGeometry.boundingBox.min.x) / 2;
+
+            const infoMesh = new THREE.Mesh(infoGeometry, infoMaterial);
+            infoMesh.position.set(centerOffset, -1.5, 0.16);
+            this.scoreGroup.add(infoMesh);
         }
         
         // Start animation loop for glow effect

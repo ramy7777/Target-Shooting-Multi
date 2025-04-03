@@ -49,6 +49,14 @@ export class Engine {
         // Setup OrbitControls for PC
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.target.set(0, 1.6, 0);
+        
+        // Disable left mouse button rotation/dragging but keep right button and middle button
+        this.controls.mouseButtons = {
+            LEFT: null,           // Disable left mouse button control
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.ROTATE
+        };
+        
         this.controls.update();
 
         this.clock = new THREE.Clock();
@@ -110,12 +118,12 @@ export class Engine {
     }
 
     setupLights() {
-        // Add ambient light with slightly blue tint
-        const ambientLight = new THREE.AmbientLight(0x404060, 0.6);
+        // Add stronger ambient light
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
         this.scene.add(ambientLight);
 
-        // Add directional light with warm tint
-        const directionalLight = new THREE.DirectionalLight(0xfff0e0, 1.2);
+        // Add directional light with warmer tint and higher intensity
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
         directionalLight.position.set(5, 8, 3);
         directionalLight.castShadow = true;
         directionalLight.shadow.mapSize.width = 2048;
@@ -125,8 +133,13 @@ export class Engine {
         directionalLight.shadow.bias = -0.0001;
         this.scene.add(directionalLight);
 
+        // Add second directional light from another angle
+        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 1.0);
+        directionalLight2.position.set(-5, 6, -3);
+        this.scene.add(directionalLight2);
+
         // Add hemisphere light for subtle color variation
-        const hemiLight = new THREE.HemisphereLight(0x606090, 0x202040, 0.5);
+        const hemiLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 0.6);
         this.scene.add(hemiLight);
     }
 

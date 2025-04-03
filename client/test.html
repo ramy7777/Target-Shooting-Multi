@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Test</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <div id="status"></div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "/three/build/three.module.js",
+            "three/addons/": "/three/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        
+        // Simple test to see if Three.js loads correctly
+        const statusDiv = document.getElementById('status');
+        
+        try {
+            // Create scene
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x6495ED);
+            
+            // Create camera
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 5;
+            
+            // Create renderer
+            const renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+            
+            // Add controls
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.update();
+            
+            // Create a cube
+            const geometry = new THREE.BoxGeometry();
+            const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            const cube = new THREE.Mesh(geometry, material);
+            scene.add(cube);
+            
+            // Animation loop
+            function animate() {
+                requestAnimationFrame(animate);
+                cube.rotation.x += 0.01;
+                cube.rotation.y += 0.01;
+                controls.update();
+                renderer.render(scene, camera);
+            }
+            
+            animate();
+            statusDiv.textContent = "Three.js loaded successfully!";
+            statusDiv.style.color = "green";
+            statusDiv.style.padding = "20px";
+            statusDiv.style.fontFamily = "Arial, sans-serif";
+        } catch (error) {
+            statusDiv.textContent = "Error loading Three.js: " + error.message;
+            statusDiv.style.color = "red";
+            statusDiv.style.padding = "20px";
+            statusDiv.style.fontFamily = "Arial, sans-serif";
+            console.error(error);
+        }
+    </script>
+</body>
+</html> 
