@@ -1,9 +1,47 @@
 import * as THREE from 'three';
 
-export class Bird extends THREE.Object3D {
-    constructor(position = new THREE.Vector3(), direction = new THREE.Vector3(1, 0, 0)) {
+export class Bird extends THREE.Group {
+    constructor(position, direction, movementData) {
         super();
+        this.position.copy(position);
+        this.direction = direction.clone();
+        this.spawnTime = Date.now();
+        this.lifeTime = 0;
+        this.maxLifeTime = 25000; // 25 seconds
+        this.birdManager = null;
         
+        // Store received movement data or generate new if not provided
+        this.movementData = movementData || {
+            speed: THREE.MathUtils.randFloat(0.3, 0.6),
+            patternType: Math.floor(Math.random() * 3),
+            patternScale: THREE.MathUtils.randFloat(0.5, 1.5),
+            patternPhase: Math.random() * Math.PI * 2,
+            timeOffset: Math.random() * 1000,
+            directionX: THREE.MathUtils.randFloatSpread(0.5),
+            directionZ: THREE.MathUtils.randFloatSpread(0.5)
+        };
+        
+        // Store initial position
+        this.initialPosition = position.clone();
+        this.currentPosition = position.clone();
+        
+        // Ensure visible
+        this.visible = true;
+        
+        // Create simple bright ball
+        this.createSimpleBall();
+        
+        // Set bounding box for collision detection
+        this.boundingBox = new THREE.Box3();
+        this.updateBoundingBox();
+        
+        // Create a trail effect
+        this.createTrailEffect(position);
+        
+        console.log('[BIRD] Bird created with mesh count:', this.children.length);
+    }
+    
+    createSimpleBall() {
         // Create a holographic sphere with room-matching material
         const geometry = new THREE.SphereGeometry(0.075, 32, 32);
         const material = new THREE.ShaderMaterial({
@@ -105,95 +143,146 @@ export class Bird extends THREE.Object3D {
         });
 
         this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh.visible = true;
         this.add(this.mesh);
         
         // Store the material for animation updates
         this.material = material;
-
-        // Set initial position
-        this.position.copy(position);
-        this.spawnTime = Date.now();
-        this.lifespan = 40000; // 40 seconds lifespan
-        
-        // Initialize movement parameters
-        this.initialPosition = position.clone();
-        this.movementSpeed = THREE.MathUtils.randFloat(0.3, 0.6); // Restored to original speed
-        this.patternType = Math.floor(Math.random() * 3); // 0: Circular, 1: Figure-8, 2: Sine wave
-        this.patternScale = THREE.MathUtils.randFloat(0.5, 1.5); // Restored to original scale
-        this.patternPhase = Math.random() * Math.PI * 2;
-        this.timeOffset = Math.random() * 1000;
-        
-        // Movement direction - restored to original spread
-        this.movementDirection = new THREE.Vector3(
-            THREE.MathUtils.randFloatSpread(0.5),
-            0,
-            THREE.MathUtils.randFloatSpread(0.5)
-        ).normalize();
-        
-        // Set bounding box for collision detection
-        this.boundingBox = new THREE.Box3();
-        this.updateBoundingBox();
     }
-
-    update(deltaTime) {
-        const currentTime = Date.now();
-        const elapsedTime = (currentTime - this.spawnTime + this.timeOffset) / 1000; // In seconds
-
-        // Check lifespan
-        if (currentTime - this.spawnTime > this.lifespan) {
-            return true; // Bird should be removed
-        }
-
-        // Update holographic effect time
-        if (this.material && this.material.uniforms) {
-            this.material.uniforms.time.value += deltaTime;
+    
+    createTrailEffect(position) {
+        this.trailLength = 5;
+        this.trailPoints = [];
+        for (let i = 0; i < this.trailLength; i++) {
+            this.trailPoints.push(position.clone());
         }
         
-        // Apply movement pattern based on pattern type
-        this.applyMovementPattern(elapsedTime);
+        const trailGeometry = new THREE.BufferGeometry();
+        const trailMaterial = new THREE.LineBasicMaterial({ 
+            color: 0xffff00, 
+            transparent: true, 
+            opacity: 0.5
+        });
+        this.trail = new THREE.Line(trailGeometry, trailMaterial);
+        this.updateTrailGeometry();
+        this.add(this.trail);
+    }
+    
+    updateTrailGeometry() {
+        const positions = new Float32Array(this.trailPoints.length * 3);
+        for (let i = 0; i < this.trailPoints.length; i++) {
+            positions[i * 3] = this.trailPoints[i].x;
+            positions[i * 3 + 1] = this.trailPoints[i].y;
+            positions[i * 3 + 2] = this.trailPoints[i].z;
+        }
+        this.trail.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        this.trail.geometry.attributes.position.needsUpdate = true;
+    }
+    
+    update(delta) {
+        // Use absolute time since spawn for deterministic movement patterns
+        this.lifeTime += delta * 1000;
+        const elapsedSeconds = this.lifeTime / 1000;
+        
+        // Save the previous position before updating
+        const prevPosition = this.position.clone();
+        
+        // Update position with simplified movement
+        this.updatePosition(delta, elapsedSeconds);
+        
+        // Update trail
+        this.trailPoints.pop();
+        this.trailPoints.unshift(prevPosition);
+        this.updateTrailGeometry();
+        
+        // Update holographic shader time
+        if (this.material && this.material.uniforms) {
+            this.material.uniforms.time.value += delta;
+        }
+        
+        // Log position occasionally for debugging
+        if (this.lifeTime % 1000 < 20) { // Log roughly every second
+            console.log(`[BIRD] Position at ${Math.floor(this.lifeTime/1000)}s:`, 
+                `[${this.position.x.toFixed(2)}, ${this.position.y.toFixed(2)}, ${this.position.z.toFixed(2)}]`);
+        }
         
         // Update bounding box
         this.updateBoundingBox();
-
+        
+        // Check if lifetime has expired
+        if (this.lifeTime >= this.maxLifeTime) {
+            return true; // True indicates this bird should be removed
+        }
+        
         return false;
     }
     
-    applyMovementPattern(elapsedTime) {
-        // Calculate normalized time for patterns (0 to 1, cycles over time)
-        const t = elapsedTime * this.movementSpeed;
+    updatePosition(delta, elapsedTime) {
+        const { speed, patternType, patternScale, patternPhase } = this.movementData;
         
-        // Start with the initial position
-        const newPosition = this.initialPosition.clone();
+        // Base movement in the bird's direction
+        const scaledDelta = delta * speed;
+        const movement = new THREE.Vector3(
+            this.movementData.directionX * scaledDelta,
+            0,
+            this.movementData.directionZ * scaledDelta
+        );
         
-        switch(this.patternType) {
-            case 0: // Circular pattern
-                const radius = this.patternScale;
-                const circleX = Math.cos(t + this.patternPhase) * radius;
-                const circleZ = Math.sin(t + this.patternPhase) * radius;
-                newPosition.x += circleX;
-                newPosition.z += circleZ;
+        // Add pattern movement
+        switch (patternType) {
+            case 0: // Circular
+                movement.x += Math.cos(elapsedTime * 2 + patternPhase) * patternScale * 0.03;
+                movement.z += Math.sin(elapsedTime * 2 + patternPhase) * patternScale * 0.03;
+                movement.y += Math.sin(elapsedTime * 1.2) * patternScale * 0.01;
                 break;
                 
             case 1: // Figure-8 pattern
-                const scale = this.patternScale * 1.2; // Restored original multiplier
-                const figureX = Math.sin(t + this.patternPhase) * scale;
-                const figureZ = Math.sin(2 * (t + this.patternPhase)) * scale * 0.5; // Restored original value
-                newPosition.x += figureX;
-                newPosition.z += figureZ;
+                movement.x += Math.sin(elapsedTime * 1.5 + patternPhase) * patternScale * 0.04;
+                movement.z += Math.sin(2 * (elapsedTime * 1.5 + patternPhase)) * patternScale * 0.02;
+                movement.y += Math.cos(elapsedTime * 0.8 + patternPhase) * patternScale * 0.01;
                 break;
                 
-            case 2: // Sine wave pattern with horizontal movement
-                const waveScale = this.patternScale;
-                const baseOffset = t * 0.5; // Restored original movement speed
-                const verticalOffset = Math.sin(t * 2 + this.patternPhase) * waveScale * 0.3; // Restored original values
-                newPosition.x += this.movementDirection.x * baseOffset;
-                newPosition.y += verticalOffset;
-                newPosition.z += this.movementDirection.z * baseOffset;
+            case 2: // Wave
+                movement.x += (Math.sin(elapsedTime * 0.7 + patternPhase) * 0.3) * patternScale * 0.02;
+                movement.z += Math.sin(elapsedTime * 1.3 + patternPhase) * patternScale * 0.03;
+                movement.y += Math.cos(elapsedTime * 0.8) * patternScale * 0.015;
                 break;
         }
         
-        // Update the bird's position
-        this.position.copy(newPosition);
+        // Update position
+        this.position.add(movement);
+        
+        // Keep position within a reasonable range
+        const BOUNDS = {
+            minX: -6, maxX: 6,       // 3x smaller (was -18/18)
+            minY: 0.5, maxY: 5,      // Y-bounds remain the same
+            minZ: -6, maxZ: 6        // 3x smaller (was -18/18)
+        };
+        
+        // Soft boundary enforcement - gradually push back if near edges
+        if (this.position.x < BOUNDS.minX + 2) {
+            this.position.x += 0.02 * scaledDelta * 20;
+            this.movementData.directionX = Math.abs(this.movementData.directionX); // Reverse direction
+        } else if (this.position.x > BOUNDS.maxX - 2) {
+            this.position.x -= 0.02 * scaledDelta * 20;
+            this.movementData.directionX = -Math.abs(this.movementData.directionX); // Reverse direction
+        }
+        
+        if (this.position.y < BOUNDS.minY) {
+            this.position.y = BOUNDS.minY;
+            this.movementData.directionY = Math.abs(this.movementData.directionY); // Bounce up
+        } else if (this.position.y > BOUNDS.maxY) {
+            this.position.y = BOUNDS.maxY;
+            this.movementData.directionY = -Math.abs(this.movementData.directionY); // Bounce down
+        }
+        
+        if (this.position.z < BOUNDS.minZ + 2) {
+            this.position.z += 0.02 * scaledDelta * 20;
+            this.movementData.directionZ = Math.abs(this.movementData.directionZ); // Reverse direction
+        } else if (this.position.z > BOUNDS.maxZ - 2) {
+            this.position.z -= 0.02 * scaledDelta * 20;
+            this.movementData.directionZ = -Math.abs(this.movementData.directionZ); // Reverse direction
+        }
     }
 
     takeDamage(damage) {
@@ -203,10 +292,11 @@ export class Bird extends THREE.Object3D {
 
     updateBoundingBox() {
         if (this.mesh) {
-            this.mesh.geometry.computeBoundingBox();
-            const meshBox = this.mesh.geometry.boundingBox.clone();
-            meshBox.applyMatrix4(this.mesh.matrixWorld);
-            this.boundingBox.copy(meshBox);
+            // Make sure the world matrix is updated
+            this.mesh.updateMatrixWorld(true);
+            
+            // Compute the bounding box directly from mesh geometry in world space
+            this.boundingBox = new THREE.Box3().setFromObject(this.mesh);
         }
     }
 }

@@ -6,9 +6,18 @@ export class BirdManager {
         this.engine = engine;
         this.birds = new Map();
         this.lastSpawnTime = 0;
-        this.spawnInterval = 7000; // 7 seconds between spawns
-        this.maxBirds = 6; // Maximum number of birds allowed
-        this.isSpawning = false;
+        this.spawnInterval = 5000; // 5 seconds between spawns
+        this.maxBirds = 6; // Maximum number of birds allowed (reduced from 10)
+        this.isSpawning = false; // Will be set to true when startSpawning is called
+        this._lastRemovedBirdIdByNetwork = null;
+        
+        // Enable debug visualization
+        this.debug = false; // Set to false to hide bounding boxes
+        
+        // Track time for position synchronization
+        this.lastSyncTime = 0;
+        this.syncInterval = 500; // Sync positions every 500ms
+        this.timeOffset = 0; // Time difference between local and host
 
         // Get room dimensions from the platform size
         const platform = this.engine.world?.ground;
@@ -39,15 +48,25 @@ export class BirdManager {
 
         // Calculate a spawn area that's 3x smaller than before
         this.spawnBoundary = {
-            minX: -(platformDimensions.width / 12), // 1/3 of previous value (was 1/4)
-            maxX: (platformDimensions.width / 12),  // 1/3 of previous value (was 1/4)
+            minX: -(platformDimensions.width / 36), // 3x smaller (was 1/12)
+            maxX: (platformDimensions.width / 36),  // 3x smaller (was 1/12)
             minY: platformDimensions.y + heightOffset, 
             maxY: platformDimensions.y + heightOffset + spawnHeight,
-            minZ: -(platformDimensions.depth / 12), // 1/3 of previous value (was 1/4)
-            maxZ: (platformDimensions.depth / 12)   // 1/3 of previous value (was 1/4)
+            minZ: -(platformDimensions.depth / 36), // 3x smaller (was 1/12)
+            maxZ: (platformDimensions.depth / 36)   // 3x smaller (was 1/12)
         };
         
-        console.log('[BIRD] Spawn boundaries (3x smaller):', this.spawnBoundary);
+        console.log('[BIRD] Spawn boundaries (9x smaller):', this.spawnBoundary);
+
+        // Start spawning birds automatically when BirdManager is created
+        // This ensures birds start spawning immediately for testing
+        if (engine && engine.networkManager) {
+            // Wait for network manager to be ready
+            setTimeout(() => {
+                this.startSpawning();
+                console.log('[BIRD] Auto-starting bird spawning');
+            }, 2000);
+        }
     }
 
     update(delta) {
@@ -58,23 +77,129 @@ export class BirdManager {
         // Only host spawns birds
         if (this.engine.networkManager && this.engine.networkManager.isHost) {
             if (currentTime - this.lastSpawnTime > this.spawnInterval && this.birds.size < this.maxBirds) {
-                const birdsToSpawn = Math.min(3, this.maxBirds - this.birds.size);
+                console.log(`[BIRD] Time to spawn balls. Current count: ${this.birds.size}, Max: ${this.maxBirds}`);
+                const birdsToSpawn = Math.min(1, this.maxBirds - this.birds.size); // Spawn only 1 bird at a time
                 for (let i = 0; i < birdsToSpawn; i++) {
                     this.spawnBird();
                 }
                 this.lastSpawnTime = currentTime;
+                console.log(`[BIRD] After spawning, new count: ${this.birds.size}`);
+            }
+            
+            // Host periodically sends position updates to clients
+            if (currentTime - this.lastSyncTime > this.syncInterval && this.birds.size > 0) {
+                this.syncBirdPositions();
+                this.lastSyncTime = currentTime;
             }
         }
 
         // Update all birds
         for (const [id, bird] of this.birds) {
-            if (bird.update(delta)) {
+            try {
+                if (bird.update(delta)) {
+                    this.removeBird(id);
+                    console.log(`[BIRD] Ball ${id} expired naturally, removing`);
+                }
+                
+                // Update boxHelper position if it exists
+                if (this.debug && bird.boxHelper) {
+                    bird.boxHelper.update();
+                }
+            } catch (error) {
+                console.error(`[BIRD] Error updating ball ${id}:`, error);
                 this.removeBird(id);
+            }
+        }
+        
+        // Periodically verify all balls are in the scene
+        if (currentTime % 30000 < 20) { // Every ~30 seconds
+            this.verifyBallsInScene();
+        }
+    }
+
+    verifyBallsInScene() {
+        console.log(`[BIRD] Verifying ${this.birds.size} balls in scene:`);
+        let visibleCount = 0;
+        
+        for (const [id, bird] of this.birds) {
+            // Check if the bird is in the scene
+            const isInScene = this.engine.scene.children.includes(bird);
+            const hasChildren = bird.children.length > 0;
+            const isVisible = bird.visible;
+            
+            if (isVisible) visibleCount++;
+            
+            console.log(`[BIRD] Ball ${id.substring(0,6)}: in scene=${isInScene}, children=${hasChildren}, visible=${isVisible}, pos=${bird.position.toArray().map(v => v.toFixed(2))}`);
+            
+            // If not in scene, add it back
+            if (!isInScene) {
+                console.warn(`[BIRD] Ball ${id} not in scene, adding back`);
+                this.engine.scene.add(bird);
+                bird.visible = true;
+            }
+        }
+        
+        console.log(`[BIRD] Visible balls: ${visibleCount}/${this.birds.size}`);
+    }
+
+    syncBirdPositions() {
+        // Only the host should sync positions
+        if (!this.engine.networkManager?.isHost) return;
+        
+        // Prepare position data for all birds
+        const positionData = [];
+        for (const [id, bird] of this.birds) {
+            positionData.push({
+                id: id,
+                position: bird.position.toArray(),
+                serverTime: Date.now() // Include server time for synchronization
+            });
+        }
+        
+        // Send position data to all clients
+        if (positionData.length > 0) {
+            console.log(`[BIRD] Host sending position sync for ${positionData.length} birds`);
+            this.engine.networkManager.send({
+                type: 'birdPositionSync',
+                data: {
+                    birds: positionData
+                }
+            });
+        }
+    }
+
+    // Handle receiving position sync from host
+    handleBirdPositionSync(data) {
+        if (this.engine.networkManager?.isHost) return; // Host doesn't need sync
+        
+        // Calculate time offset from server if first sync
+        if (this.timeOffset === 0 && data.birds.length > 0) {
+            const serverTime = data.birds[0].serverTime;
+            this.timeOffset = Date.now() - serverTime;
+            console.log(`[BIRD] Setting time offset: ${this.timeOffset}ms`);
+        }
+        
+        // Update bird positions
+        for (const birdData of data.birds) {
+            const bird = this.birds.get(birdData.id);
+            if (bird) {
+                // Get host position
+                const hostPosition = new THREE.Vector3().fromArray(birdData.position);
+                
+                // Only make major corrections to avoid jitter
+                const distance = bird.position.distanceTo(hostPosition);
+                
+                if (distance > 0.25) { // Only correct if more than 0.25 units off
+                    console.log(`[BIRD] Correcting bird ${birdData.id} position (distance: ${distance.toFixed(3)})`);
+                    // Smoothly move towards host position
+                    bird.position.lerp(hostPosition, 0.5);
+                }
             }
         }
     }
 
     spawnBird() {
+        // Generate a position within the spawn boundary
         const x = THREE.MathUtils.randFloat(this.spawnBoundary.minX, this.spawnBoundary.maxX);
         const y = THREE.MathUtils.randFloat(this.spawnBoundary.minY, this.spawnBoundary.maxY);
         const z = THREE.MathUtils.randFloat(this.spawnBoundary.minZ, this.spawnBoundary.maxZ);
@@ -82,24 +207,70 @@ export class BirdManager {
         const position = new THREE.Vector3(x, y, z);
         const direction = new THREE.Vector3(1, 0, 0);
 
-        const bird = new Bird(position, direction);
-        bird.birdManager = this;
-        this.birds.set(bird.uuid, bird);
-        this.engine.scene.add(bird);
+        // Generate movement pattern data to share across network
+        const movementData = {
+            speed: THREE.MathUtils.randFloat(0.3, 0.6),
+            patternType: Math.floor(Math.random() * 3),
+            patternScale: THREE.MathUtils.randFloat(0.5, 1.5),
+            patternPhase: Math.random() * Math.PI * 2,
+            timeOffset: Math.random() * 1000,
+            directionX: THREE.MathUtils.randFloatSpread(0.5),
+            directionZ: THREE.MathUtils.randFloatSpread(0.5)
+        };
 
-        // Play spawn sound
-        this.engine.audioManager.playBirdSpawn();
+        // Use server time for spawning
+        const serverTime = Date.now();
+
+        // Create bird with movement data
+        console.log('[BIRD] Spawning bird at position:', position.toArray());
+        const bird = new Bird(position, direction, movementData);
+        bird.spawnTime = serverTime; // Use exact server time
+        bird.birdManager = this;
+        bird.visible = true; // Ensure visibility
+        
+        // Check bird has meshes
+        console.log('[BIRD] Bird has children:', bird.children.length);
+        
+        // Store in birds map
+        this.birds.set(bird.uuid, bird);
+        
+        // Add to scene
+        this.engine.scene.add(bird);
+        console.log('[BIRD] Ball added to scene with ID:', bird.uuid);
+
+        // Create the visual bounding box helper for debugging
+        if (this.debug) {
+            const boxHelper = new THREE.BoxHelper(bird, 0xffff00);
+            this.engine.scene.add(boxHelper);
+            bird.boxHelper = boxHelper;
+            console.log('[BIRD] Added debug box helper');
+        }
+
+        // Play spawn sound - synchronize over network
+        const playSpawnSound = () => {
+            if (this.engine.audioManager) {
+                this.engine.audioManager.playBirdSpawn();
+                console.log('[BIRD] Played spawn sound for new ball');
+            } else {
+                console.warn('[BIRD] AudioManager not available for spawn sound!');
+            }
+        };
+        
+        // Always play sound locally
+        playSpawnSound();
 
         // Network the spawn if we're the host
         if (this.engine.networkManager && this.engine.networkManager.isHost) {
+            console.log('[BIRD] Broadcasting ball spawn to network');
             this.engine.networkManager.send({
                 type: 'birdSpawned',
                 data: {
                     id: bird.uuid,
                     position: position.toArray(),
                     direction: direction.toArray(),
-                    spawnTime: bird.spawnTime,
-                    playSound: true  // Add sound flag
+                    spawnTime: serverTime, // Use exact server time
+                    playSound: true,
+                    movementData: movementData  // Include movement pattern data
                 }
             });
         }
@@ -108,18 +279,38 @@ export class BirdManager {
     }
 
     removeBird(id) {
-        const bird = this.birds.get(id);
-        if (bird) {
+        if (this.birds.has(id)) {
+            const bird = this.birds.get(id);
+            
+            // Remove from scene
             this.engine.scene.remove(bird);
+            
+            // Remove any visual helpers
+            if (bird.boxHelper) {
+                this.engine.scene.remove(bird.boxHelper);
+            }
+            
+            // Clean up geometry and material to prevent memory leaks
+            if (bird.mesh && bird.mesh.geometry) {
+                bird.mesh.geometry.dispose();
+            }
+            if (bird.mesh && bird.mesh.material) {
+                if (Array.isArray(bird.mesh.material)) {
+                    bird.mesh.material.forEach(material => material.dispose());
+                } else {
+                    bird.mesh.material.dispose();
+                }
+            }
+            
+            // Remove from collection
             this.birds.delete(id);
-
-            // Network the removal if we're the host
-            if (this.engine.networkManager && this.engine.networkManager.isHost) {
+            console.log(`[BIRD] Removed bird ${id}, count: ${this.birds.size}`);
+            
+            // Network bird removal if we're the host
+            if (this.engine.networkManager?.isHost) {
                 this.engine.networkManager.send({
                     type: 'birdRemoved',
-                    data: {
-                        id: id
-                    }
+                    data: { id }
                 });
             }
         }
@@ -142,43 +333,57 @@ export class BirdManager {
             for (const [id, bird] of this.birds) {
                 if (!bird || !bird.position) continue;
 
+                // Use a slightly larger sphere for collision detection
                 const birdSphere = new THREE.Sphere(bird.position, 0.075);
                 
                 // Check if bullet's path intersects with the sphere
                 const intersection = this.checkBulletSpherePath(bulletPath, birdSphere);
                 
                 if (intersection) {
+                    console.log(`[BIRD] Collision detected between bullet and bird ${id}`);
+                    
                     // Get the bird's position for the explosion effect
                     const explosionPosition = bird.position.clone();
 
-                    // Remove the bird immediately to prevent duplicate hits
-                    this.removeBird(id);
-
-                    // Create particle explosion only (sound will be handled by network hit)
-                    if (this.engine.particleManager) {
-                        this.engine.particleManager.createExplosion(explosionPosition);
-                    }
-
-                    // Add strong haptic feedback for bird destruction
-                    if (this.engine.renderer?.xr.isPresenting) {
-                        const session = this.engine.renderer.xr.getSession();
-                        if (session && session.inputSources) {
-                            session.inputSources.forEach(inputSource => {
-                                if (inputSource.gamepad && this.engine.inputManager) {
-                                    this.engine.inputManager.triggerHapticFeedback(inputSource.gamepad, 1.0, 150);
-                                }
-                            });
+                    // FOR LOCAL HITS ONLY - Play immediate feedback for shooter
+                    // This gives immediate feedback to the shooter but final validation comes from the server
+                    if (bullet.shooterId === this.engine.networkManager?.localPlayerId) {
+                        // Play effects locally for immediate feedback
+                        if (this.engine.particleManager) {
+                            this.engine.particleManager.createExplosion(explosionPosition);
+                            console.log('[BIRD] Created local hit particle effect for immediate feedback');
                         }
+                        
+                        if (this.engine.audioManager) {
+                            this.engine.audioManager.playBirdDestruction();
+                            console.log('[BIRD] Played local hit sound for immediate feedback');
+                        }
+                        
+                        // Add haptic feedback for VR
+                        this.triggerHapticFeedback(1.0, 150);
                     }
 
+                    // If we're a client
+                    if (this.engine.networkManager && !this.engine.networkManager.isHost) {
+                        // Send hit attempt to host for validation with extra data
+                        console.log('[BIRD] Client sending hit attempt to host');
+                        this.engine.networkManager.send({
+                            type: 'birdHitAttempt',
+                            data: {
+                                birdId: id,
+                                bulletShooterId: bullet.shooterId,
+                                position: explosionPosition.toArray(),
+                                bulletPosition: bullet.position.toArray(),
+                                bulletVelocity: bullet.velocity.toArray()
+                            }
+                        });
+                    }
                     // If we're the host
-                    if (this.engine.networkManager?.isHost) {
+                    else if (this.engine.networkManager?.isHost) {
                         // Only update score if it's our own bullet
                         if (bullet.shooterId === this.engine.networkManager.localPlayerId) {
                             console.log('[BIRD] Host updating own score for hit');
                             this.engine.scoreManager?.updateScore(bullet.shooterId, 10);
-                            // Play sound for host's own hits
-                            this.engine.audioManager?.playBirdDestruction();
                             
                             // Make sure score gets updated for all clients
                             const hostScore = this.engine.scoreManager?.scores.get(bullet.shooterId) || 0;
@@ -196,20 +401,10 @@ export class BirdManager {
                                 points: 10
                             }
                         });
-                    } 
-                    // If we're a client
-                    else if (this.engine.networkManager) {
-                        // Send hit attempt to host for validation
-                        console.log('[BIRD] Client sending hit attempt to host');
-                        this.engine.networkManager.send({
-                            type: 'birdHitAttempt',
-                            data: {
-                                birdId: id,
-                                bulletShooterId: bullet.shooterId,
-                                position: explosionPosition.toArray()
-                            }
-                        });
                     }
+                    
+                    // Remove the bird immediately to prevent duplicate hits
+                    this.removeBird(id);
                     
                     return true; // Collision detected
                 }
@@ -218,6 +413,25 @@ export class BirdManager {
         } catch (error) {
             console.error('[BIRD] Error in bullet collision check:', error);
             return false;
+        }
+    }
+
+    // Centralized method to trigger haptic feedback
+    triggerHapticFeedback(intensity = 1.0, duration = 150) {
+        try {
+            if (this.engine.renderer?.xr.isPresenting) {
+                const session = this.engine.renderer.xr.getSession();
+                if (session && session.inputSources) {
+                    session.inputSources.forEach(inputSource => {
+                        if (inputSource.gamepad && this.engine.inputManager) {
+                            this.engine.inputManager.triggerHapticFeedback(inputSource.gamepad, intensity, duration);
+                            console.log(`[BIRD] Triggered haptic feedback: intensity=${intensity}, duration=${duration}`);
+                        }
+                    });
+                }
+            }
+        } catch (error) {
+            console.warn('[BIRD] Error triggering haptic feedback:', error);
         }
     }
 
@@ -238,38 +452,51 @@ export class BirdManager {
 
             console.log('[BIRD] Processing network bird hit:', data);
             
-            // Always play sound effect for bird destruction, regardless of shooter
-            this.engine.audioManager?.playBirdDestruction();
-
-            // Only update score if:
-            // 1. We're a client (not host)
-            // 2. The bullet was shot by us
-            // 3. We have a score manager
-            if (!this.engine.networkManager.isHost && 
-                bulletShooterId === this.engine.networkManager.localPlayerId &&
-                this.engine.scoreManager) {
-                console.log('[BIRD] Updating score for client hit:', bulletShooterId, points);
-                this.engine.scoreManager.updateScore(bulletShooterId, points);
-                
-                // Explicitly broadcast our updated score to ensure it's visible to all players
-                const clientScore = this.engine.scoreManager.scores.get(bulletShooterId) || 0;
-                this.engine.networkManager.broadcastScoreUpdate(bulletShooterId, clientScore);
-                console.log(`[BIRD] Client broadcasting score update: Player ${bulletShooterId} = ${clientScore}`);
+            // Skip duplicating effects if we already created effects locally as the shooter
+            const isLocalShooter = bulletShooterId === this.engine.networkManager.localPlayerId;
+            
+            // Extract position data for effects
+            const explosionPos = new THREE.Vector3().fromArray(position);
+            
+            // Create explosion effect for everyone EXCEPT the shooter (who already saw it)
+            if (!isLocalShooter && this.engine.particleManager) {
+                this.engine.particleManager.createExplosion(explosionPos);
+                console.log(`[BIRD] Created network hit explosion at position [${explosionPos.x.toFixed(2)}, ${explosionPos.y.toFixed(2)}, ${explosionPos.z.toFixed(2)}]`);
+            } else if (isLocalShooter) {
+                console.log('[BIRD] Skipping explosion for local shooter who already saw it');
+            } else {
+                console.warn('[BIRD] Unable to create explosion: ParticleManager not available');
             }
             
-            // Update the shooter's score in our local score manager
-            // This ensures we show scores for shots we didn't make
-            if (this.engine.scoreManager && bulletShooterId !== this.engine.networkManager.localPlayerId) {
+            // Play sound for everyone EXCEPT the shooter (who already heard it)
+            if (!isLocalShooter && this.engine.audioManager) {
+                this.engine.audioManager.playBirdDestruction();
+                console.log('[BIRD] Played network hit sound');
+            } else if (isLocalShooter) {
+                console.log('[BIRD] Skipping sound for local shooter who already heard it');
+            } else {
+                console.warn('[BIRD] Unable to play sound: AudioManager not available');
+            }
+            
+            // Add haptic feedback for VR for everyone EXCEPT the shooter
+            if (!isLocalShooter) {
+                this.triggerHapticFeedback(0.8, 100);
+            }
+
+            // IMPORTANT: Always update score when we get a confirmed hit from the server
+            // This ensures the shooter gets points even if the bird positions were slightly different
+            if (this.engine.scoreManager) {
                 // If we don't have this player in our scores yet, add them
                 if (!this.engine.scoreManager.scores.has(bulletShooterId)) {
+                    console.log(`[BIRD] Adding new player ${bulletShooterId} to score table`);
                     this.engine.scoreManager.addPlayer(bulletShooterId);
                 }
                 
-                // Calculate the new score without calling updateScore (which might trigger broadcasts)
+                // Update the score and display
                 const currentScore = this.engine.scoreManager.scores.get(bulletShooterId) || 0;
                 const newScore = currentScore + points;
+                console.log(`[BIRD] Network hit: updating score for player ${bulletShooterId} from ${currentScore} to ${newScore}`);
                 
-                console.log(`[BIRD] Updating remote player score: Player ${bulletShooterId} = ${newScore}`);
                 this.engine.scoreManager.scores.set(bulletShooterId, newScore);
                 this.engine.scoreManager.updateScoreDisplay();
                 
@@ -279,22 +506,12 @@ export class BirdManager {
                 }
             }
 
-            // Handle visual effects
-            try {
-                // Create explosion effect
-                if (this.engine.particleManager) {
-                    const explosionPos = new THREE.Vector3().fromArray(position);
-                    this.engine.particleManager.createExplosion(explosionPos);
-                }
-            } catch (effectError) {
-                console.error('[BIRD] Error playing hit effects:', effectError);
-            }
-
-            // Remove the bird if it exists
+            // Remove the bird if it still exists
             if (this.birds.has(birdId)) {
+                console.log(`[BIRD] Removing bird ${birdId} after network hit confirmation`);
                 this.removeBird(birdId);
             } else {
-                console.warn('[BIRD] Bird not found for network hit:', birdId);
+                console.log(`[BIRD] Bird ${birdId} already removed`);
             }
         } catch (error) {
             console.error('[BIRD] Error handling network bird hit:', error);
@@ -307,7 +524,10 @@ export class BirdManager {
         bulletPath.closestPointToPoint(sphere.center, true, closestPoint);
 
         // Check if the closest point is within the line segment and sphere
-        if (closestPoint.distanceTo(sphere.center) <= sphere.radius) {
+        // Use a slightly larger collision radius for more generous hit detection
+        const collisionRadius = sphere.radius * 1.25; // 25% larger collision radius
+        
+        if (closestPoint.distanceTo(sphere.center) <= collisionRadius) {
             // Check if the point is actually on our line segment
             const lineStart = bulletPath.start;
             const lineEnd = bulletPath.end;
@@ -327,18 +547,40 @@ export class BirdManager {
     }
 
     handleNetworkBirdSpawn(data) {
-        console.debug('[DEBUG] Handling network bird spawn:', data);
+        console.log('[BIRD] Handling network ball spawn:', data);
         const position = new THREE.Vector3().fromArray(data.position);
         const direction = new THREE.Vector3().fromArray(data.direction);
 
-        const bird = new Bird(position, direction);
+        // Create bird with received movement data to ensure consistent movement
+        const bird = new Bird(position, direction, data.movementData);
+        bird.visible = true; // Ensure visibility
+        
+        // Use server time + time offset to account for network delay
         bird.spawnTime = data.spawnTime;
+        bird.birdManager = this;
+        
+        // Check bird has meshes
+        console.log('[BIRD] Network ball has children:', bird.children.length);
+        
+        // Store in birds map
         this.birds.set(data.id, bird);
+        
+        // Add to scene
         this.engine.scene.add(bird);
+        console.log('[BIRD] Network ball added to scene with ID:', data.id);
 
-        // Play spawn sound if requested
-        if (data.playSound) {
+        // Create the visual bounding box helper for debugging
+        if (this.debug) {
+            const boxHelper = new THREE.BoxHelper(bird, 0xffff00);
+            this.engine.scene.add(boxHelper);
+            bird.boxHelper = boxHelper;
+            console.log('[BIRD] Added debug box helper for network ball');
+        }
+
+        // Play spawn sound if requested - always synchronized with spawn
+        if (data.playSound && this.engine.audioManager) {
             this.engine.audioManager.playBirdSpawn();
+            console.log('[BIRD] Played spawn sound for network ball');
         }
 
         // Make sure spawning is enabled when receiving network birds
@@ -346,7 +588,23 @@ export class BirdManager {
     }
 
     handleNetworkBirdRemoved(data) {
-        this.removeBird(data.id);
+        console.log('[BIRD] Handling network bird removal for bird:', data.id);
+        // Track this as a network-triggered removal
+        this._lastRemovedBirdIdByNetwork = data.id;
+        
+        if (this.birds.has(data.id)) {
+            const bird = this.birds.get(data.id);
+            this.engine.scene.remove(bird);
+            this.birds.delete(data.id);
+            console.log('[BIRD] Bird removed successfully');
+        } else {
+            console.warn('[BIRD] Bird not found for removal:', data.id);
+        }
+        
+        // Clear the tracking after a short delay
+        setTimeout(() => {
+            this._lastRemovedBirdIdByNetwork = null;
+        }, 100);
     }
 
     handleBirdKilled(data) {
@@ -364,13 +622,22 @@ export class BirdManager {
 
     startSpawning() {
         this.isSpawning = true;
+        console.log('[BIRD] Bird spawning started');
+        
+        // Force spawn a few birds immediately if we're the host
+        if (this.engine.networkManager && this.engine.networkManager.isHost) {
+            console.log('[BIRD] Host forcing initial bird spawn');
+            this.lastSpawnTime = Date.now() - this.spawnInterval; // Force immediate spawn
+        }
     }
 
     stopSpawning() {
         this.isSpawning = false;
+        console.log('[BIRD] Bird spawning stopped');
         // Remove all birds
         for (const id of this.birds.keys()) {
             this.removeBird(id);
         }
     }
 }
+

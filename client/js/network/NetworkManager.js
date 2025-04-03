@@ -54,7 +54,14 @@ export class NetworkManager {
                     reject(error);
                 };
                 
-                this.ws.onmessage = (event) => this.handleMessage(event);
+                this.ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        this.handleMessage(data);
+                    } catch (error) {
+                        console.error('[NETWORK] Error parsing message:', error, event.data);
+                    }
+                };
             } catch (error) {
                 console.error('[NETWORK] Failed to connect:', error);
                 reject(error);
@@ -90,28 +97,72 @@ export class NetworkManager {
     }
 
     handleMessage(message) {
-        const data = JSON.parse(message.data);
-        console.log('[NETWORK] Received message:', data);
-
-        // Don't process our own messages
-        if (data.senderId === this.localPlayerId) {
-            console.log('[NETWORK] Ignoring own message');
-            return;
+        // Log received messages (excluding position updates to reduce spam)
+        if (message.type !== 'birdPositionSync') {
+            console.log(`[NETWORK] Received message: ${message.type}`, message.data);
         }
 
-        switch (data.type) {
+        // Process the message based on type
+        switch (message.type) {
+            case 'birdSpawned':
+                console.log('[NETWORK] Bird spawn message received');
+                if (this.engine.birdManager) {
+                    // Call with HIGH PRIORITY to ensure proper synchronization
+                    setTimeout(() => {
+                        this.engine.birdManager.handleNetworkBirdSpawn(message.data);
+                    }, 0);  // Using setTimeout with 0ms for immediate async execution
+                }
+                break;
+
+            case 'birdHit':
+                // CRITICAL PRIORITY - Process immediately
+                console.log('[NETWORK] Bird hit confirmed by server:', message.data.birdId);
+                if (this.engine.birdManager) {
+                    // Immediate sync for effects
+                    this.engine.birdManager.handleNetworkBirdHit(message.data);
+                }
+                break;
+
+            case 'birdHitAttempt':
+                // Host validation of bullet hit
+                if (this.isHost && this.engine.birdManager) {
+                    console.log('[NETWORK] Host processing bird hit attempt');
+                    // Validate hit (just accepting for now, could add more validation)
+                    const { birdId, bulletShooterId, position } = message.data;
+                    
+                    // Broadcast confirmed hit to all players
+                    this.send({
+                        type: 'birdHit',
+                        data: {
+                            birdId,
+                            bulletShooterId,
+                            position,
+                            points: 10
+                        }
+                    });
+                    
+                    // Update points for shooter
+                    if (this.engine.scoreManager) {
+                        this.engine.scoreManager.updateScore(bulletShooterId, 10);
+                        // Broadcast the updated score
+                        const score = this.engine.scoreManager.scores.get(bulletShooterId) || 0;
+                        this.broadcastScoreUpdate(bulletShooterId, score);
+                    }
+                }
+                break;
+
             case 'init':
-                this.localPlayerId = data.id;
+                this.localPlayerId = message.id;
                 console.log('[NETWORK] Initialized with ID:', this.localPlayerId);
                 break;
                 
             case 'hostConfirm':
-                this.currentRoom = data.roomCode;
+                this.currentRoom = message.roomCode;
                 this.isHost = true;
                 this.engine.playerManager.createLocalPlayer();
                 
-                if (data.players) {
-                    data.players.forEach(player => {
+                if (message.players) {
+                    message.players.forEach(player => {
                         if (player.id !== this.localPlayerId) {
                             this.engine.playerManager.addPlayer(player.id);
                             if (player.position) {
@@ -129,12 +180,12 @@ export class NetworkManager {
                 
             case 'joinConfirm':
             case 'autoJoinConfirm':
-                this.currentRoom = data.roomCode;
+                this.currentRoom = message.roomCode;
                 this.isHost = false;
                 this.engine.playerManager.createLocalPlayer();
                 
-                if (data.players) {
-                    data.players.forEach(player => {
+                if (message.players) {
+                    message.players.forEach(player => {
                         if (player.id !== this.localPlayerId) {
                             this.engine.playerManager.addPlayer(player.id);
                             if (player.position) {
@@ -152,85 +203,61 @@ export class NetworkManager {
                 
             case 'playerJoined':
                 if (!this.currentRoom) return;
-                if (data.id !== this.localPlayerId) {
-                    this.engine.playerManager.addPlayer(data.id);
+                if (message.id !== this.localPlayerId) {
+                    this.engine.playerManager.addPlayer(message.id);
                 }
                 break;
                 
             case 'playerLeft':
                 if (!this.currentRoom) return;
-                if (data.id !== this.localPlayerId) {
-                    this.engine.playerManager.removePlayer(data.id);
+                if (message.id !== this.localPlayerId) {
+                    this.engine.playerManager.removePlayer(message.id);
                 }
                 break;
                 
             case 'position':
                 if (!this.currentRoom) return;
-                if (data.id !== this.localPlayerId) {
-                    this.engine.playerManager.updatePlayer(data.id, {
-                        position: data.position,
-                        headPosition: data.headPosition,
-                        headRotation: data.headRotation,
-                        controllers: data.controllers
+                if (message.id !== this.localPlayerId) {
+                    this.engine.playerManager.updatePlayer(message.id, {
+                        position: message.position,
+                        headPosition: message.headPosition,
+                        headRotation: message.headRotation,
+                        controllers: message.controllers
                     });
                 }
                 break;
 
             case 'bulletSpawned':
-                this.engine.bulletManager.handleNetworkBulletSpawn(data.data, data.senderId);
+                this.engine.bulletManager.handleNetworkBulletSpawn(message.data, message.senderId);
                 break;
 
             case 'bulletHit':
-                this.engine.bulletManager.handleNetworkBulletHit(data.data);
+                this.engine.bulletManager.handleNetworkBulletHit(message.data);
                 break;
 
             case 'sphereSpawned':
-                if (data.senderId !== this.localPlayerId) {
-                    console.debug('[DEBUG] Received sphere spawn message:', data);
-                    this.engine.sphereManager.handleNetworkSphereSpawn(data.data, data.senderId);
+                if (message.senderId !== this.localPlayerId) {
+                    console.debug('[DEBUG] Received sphere spawn message:', message);
+                    this.engine.sphereManager.handleNetworkSphereSpawn(message.data, message.senderId);
                 }
                 break;
 
             case 'sphereRemoved':
-                this.engine.sphereManager.handleNetworkSphereRemoved(data.data);
+                this.engine.sphereManager.handleNetworkSphereRemoved(message.data);
                 break;
 
-            case 'birdSpawned':
+            case 'birdRemoved':
                 if (this.engine.birdManager) {
-                    this.engine.birdManager.handleNetworkBirdSpawn(data.data);
-                }
-                break;
-
-            case 'birdHitAttempt':
-                if (this.isHost) {
-                    // Host validates the hit attempt
-                    const bird = this.engine.birdManager.birds.get(data.data.birdId);
-                    if (bird) {
-                        // Bird exists, validate the hit
-                        this.send({
-                            type: 'birdHit',
-                            data: {
-                                birdId: data.data.birdId,
-                                bulletShooterId: data.senderId,
-                                position: data.data.position,
-                                points: 10
-                            }
-                        });
-                    }
-                }
-                break;
-
-            case 'birdHit':
-                if (this.engine.birdManager) {
-                    this.engine.birdManager.handleNetworkBirdHit(data.data);
+                    console.log('[NETWORK] Processing bird removal message for bird:', message.data.id);
+                    this.engine.birdManager.handleNetworkBirdRemoved(message.data);
                 }
                 break;
 
             case 'gameStart':
                 if (!this.isHost) {
-                    console.log('[NETWORK] Client received game start:', data);
-                    if (!data.data || !data.data.startTime || !data.data.duration) {
-                        console.error('[NETWORK] Invalid game start data:', data);
+                    console.log('[NETWORK] Client received game start:', message);
+                    if (!message.data || !message.data.startTime || !message.data.duration) {
+                        console.error('[NETWORK] Invalid game start data:', message);
                         return;
                     }
                     
@@ -253,12 +280,12 @@ export class NetworkManager {
                         });
                     }
                     
-                    this.engine.uiManager.handleNetworkGameStart(data.data);
+                    this.engine.uiManager.handleNetworkGameStart(message.data);
                 }
                 break;
 
             case 'gameEnd':
-                console.log('[NETWORK] Received game end message from:', data.senderId);
+                console.log('[NETWORK] Received game end message from:', message.senderId);
                 if (this.engine.uiManager) {
                     this.engine.uiManager.handleNetworkGameEnd();
                 } else {
@@ -267,63 +294,72 @@ export class NetworkManager {
                 break;
 
             case 'voice_ready':
-                this.engine.voiceManager.handleVoiceReady(data.playerId);
+                this.engine.voiceManager.handleVoiceReady(message.playerId);
                 break;
             
             case 'voice_offer':
-                this.engine.voiceManager.handleVoiceOffer(data.playerId, data.offer);
+                this.engine.voiceManager.handleVoiceOffer(message.playerId, message.offer);
                 break;
             
             case 'voice_answer':
-                this.engine.voiceManager.handleVoiceAnswer(data.playerId, data.answer);
+                this.engine.voiceManager.handleVoiceAnswer(message.playerId, message.answer);
                 break;
             
             case 'voice_ice_candidate':
-                this.engine.voiceManager.handleVoiceIceCandidate(data.playerId, data.candidate);
+                this.engine.voiceManager.handleVoiceIceCandidate(message.playerId, message.candidate);
                 break;
             
             case 'voice_stop':
-                this.engine.voiceManager.handleVoiceStop(data.playerId);
+                this.engine.voiceManager.handleVoiceStop(message.playerId);
                 break;
 
             case 'scoreUpdate':
                 if (this.engine.scoreManager) {
-                    console.log('[NETWORK] Received score update:', data);
+                    console.log('[NETWORK] Received score update:', message);
                     
                     // Force add the player if they don't exist in our score list yet
-                    if (!this.engine.scoreManager.scores.has(data.data.playerId)) {
-                        this.engine.scoreManager.addPlayer(data.data.playerId);
+                    if (!this.engine.scoreManager.scores.has(message.data.playerId)) {
+                        this.engine.scoreManager.addPlayer(message.data.playerId);
+                        console.log(`[NETWORK] Added new player ${message.data.playerId} to score table`);
                     }
                     
                     // Update the score
-                    this.engine.scoreManager.handleNetworkScoreUpdate(data.data);
+                    this.engine.scoreManager.handleNetworkScoreUpdate(message.data);
                     
                     // If we're the host, make sure the score gets broadcast to all clients
-                    if (this.isHost && data.senderId !== this.localPlayerId) {
+                    if (this.isHost && message.senderId !== this.localPlayerId) {
                         console.log('[NETWORK] Host relaying score update to all clients');
-                        this.broadcastScoreUpdate(data.data.playerId, data.data.score);
+                        this.broadcastScoreUpdate(message.data.playerId, message.data.score);
                     }
                 }
                 break;
 
             case 'timerSync':
-                console.log('[NETWORK] Received timer sync from host:', data.data);
+                console.log('[NETWORK] Received timer sync from host:', message.data);
                 if (this.engine.uiManager) {
-                    this.engine.uiManager.handleTimerSync(data.data);
+                    this.engine.uiManager.handleTimerSync(message.data);
                 } else {
                     console.error('[NETWORK] UIManager not found for timer sync');
                 }
                 break;
 
             case 'error':
-                console.error('Server error:', data.message);
+                console.error('Server error:', message.message);
                 if (this.engine.sessionManager) {
-                    this.engine.sessionManager.showError(data.message);
+                    this.engine.sessionManager.showError(message.message);
+                }
+                break;
+
+            case 'birdPositionSync':
+                // Handle bird position synchronization from host
+                if (this.engine.birdManager) {
+                    console.log(`[NETWORK] Received position sync for ${message.data.birds.length} birds`);
+                    this.engine.birdManager.handleBirdPositionSync(message.data);
                 }
                 break;
 
             default:
-                console.warn('[NETWORK] Unknown message type:', data.type);
+                console.warn('[NETWORK] Unknown message type:', message.type);
         }
     }
 
@@ -387,7 +423,7 @@ export class NetworkManager {
         
         console.log(`[NETWORK] Broadcasting score update: Player ${playerId} = ${score}`);
         
-        // Send the score update as is
+        // Always send score update to all clients
         this.send({
             type: 'scoreUpdate',
             data: {
@@ -397,11 +433,18 @@ export class NetworkManager {
         });
         
         // Make sure our local score display is updated too
-        if (this.engine.scoreManager && !this.engine.scoreManager.scores.has(playerId)) {
-            this.engine.scoreManager.addPlayer(playerId);
+        if (this.engine.scoreManager) {
+            // First add the player if needed
+            if (!this.engine.scoreManager.scores.has(playerId)) {
+                this.engine.scoreManager.addPlayer(playerId);
+            }
+            
+            // Update the score directly to avoid broadcast loops
+            console.log(`[NETWORK] Setting local score: Player ${playerId} = ${score}`);
             this.engine.scoreManager.scores.set(playerId, score);
             this.engine.scoreManager.updateScoreDisplay();
             
+            // Update VR scores if available
             if (this.engine.scoreManager.vrScoreUI) {
                 this.engine.scoreManager.updateVRScores();
             }
