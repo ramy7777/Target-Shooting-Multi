@@ -154,6 +154,20 @@ export class NetworkManager {
                         timestamp: Date.now()
                     };
                     
+                    // IMPORTANT: Host should see effects for client hits
+                    // Create particle effect at reported position
+                    if (this.engine.particleManager && position) {
+                        const hitPos = new THREE.Vector3().fromArray(position);
+                        this.engine.particleManager.createExplosion(hitPos);
+                        console.log('[NETWORK] Host created particle effect for client hit');
+                    }
+                    
+                    // Play sound for client hit
+                    if (this.engine.audioManager) {
+                        this.engine.audioManager.playBirdDestruction();
+                        console.log('[NETWORK] Host played sound for client hit');
+                    }
+                    
                     // Broadcast confirmed hit to all players
                     this.send({
                         type: 'birdHit',

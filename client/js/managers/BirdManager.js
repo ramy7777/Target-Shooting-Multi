@@ -79,7 +79,7 @@ export class BirdManager {
         if (this.engine.networkManager && this.engine.networkManager.isHost) {
             if (currentTime - this.lastSpawnTime > this.spawnInterval && this.birds.size < this.maxBirds) {
                 console.log(`[BIRD] Time to spawn balls. Current count: ${this.birds.size}, Max: ${this.maxBirds}`);
-                const birdsToSpawn = Math.min(1, this.maxBirds - this.birds.size); // Spawn only 1 bird at a time
+                const birdsToSpawn = Math.min(2, this.maxBirds - this.birds.size); // Spawn 2 birds at a time
                 for (let i = 0; i < birdsToSpawn; i++) {
                     this.spawnBird();
                 }
@@ -471,20 +471,6 @@ export class BirdManager {
 
             console.log('[BIRD] Processing network bird hit:', data);
             
-            // If we're the host, check if this is a duplicate of our own hit we already processed
-            if (this.engine.networkManager.isHost && this.lastHostHitData) {
-                const isDuplicate = (
-                    this.lastHostHitData.birdId === birdId && 
-                    this.lastHostHitData.bulletShooterId === bulletShooterId &&
-                    Date.now() - this.lastHostHitData.timestamp < 1000 // Within 1 second
-                );
-                
-                if (isDuplicate) {
-                    console.log('[BIRD] Host detected duplicate hit message, ignoring:', data);
-                    return;
-                }
-            }
-            
             // Check if this is a host message for its own shot (avoid double processing)
             const isLocalPlayer = bulletShooterId === this.engine.networkManager.localPlayerId;
             const isHostSelfMessage = isLocalPlayer && this.engine.networkManager.isHost;
@@ -499,21 +485,23 @@ export class BirdManager {
             // Extract position data for effects
             const explosionPos = new THREE.Vector3().fromArray(position);
             
-            // Create explosion effect for everyone EXCEPT the shooter (who already saw it)
-            if (!isLocalPlayer && this.engine.particleManager) {
+            // Create explosion effect - host should see ALL effects, clients skip only their own shots
+            const shouldSkipEffect = isLocalPlayer && !this.engine.networkManager.isHost;
+            
+            if (!shouldSkipEffect && this.engine.particleManager) {
                 this.engine.particleManager.createExplosion(explosionPos);
                 console.log(`[BIRD] Created network hit explosion at position [${explosionPos.x.toFixed(2)}, ${explosionPos.y.toFixed(2)}, ${explosionPos.z.toFixed(2)}]`);
-            } else if (isLocalPlayer) {
+            } else if (shouldSkipEffect) {
                 console.log('[BIRD] Skipping explosion for local shooter who already saw it');
             } else {
                 console.warn('[BIRD] Unable to create explosion: ParticleManager not available');
             }
             
-            // Play sound for everyone EXCEPT the shooter (who already heard it)
-            if (!isLocalPlayer && this.engine.audioManager) {
+            // Play sound - host should hear ALL sounds, clients skip only their own shots
+            if (!shouldSkipEffect && this.engine.audioManager) {
                 this.engine.audioManager.playBirdDestruction();
                 console.log('[BIRD] Played network hit sound');
-            } else if (isLocalPlayer) {
+            } else if (shouldSkipEffect) {
                 console.log('[BIRD] Skipping sound for local shooter who already heard it');
             } else {
                 console.warn('[BIRD] Unable to play sound: AudioManager not available');
