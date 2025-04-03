@@ -400,6 +400,14 @@ export class BirdManager {
                             const hostScore = this.engine.scoreManager?.scores.get(bullet.shooterId) || 0;
                             this.engine.networkManager.broadcastScoreUpdate(bullet.shooterId, hostScore);
                             console.log(`[BIRD] Host broadcasting score update: Player ${bullet.shooterId} = ${hostScore}`);
+                            
+                            // Only force a full scores sync on first hit (going from 0 to 10)
+                            if (hostScore === 10) {
+                                console.log('[BIRD] First hit detected, sending full score sync to ensure client consistency');
+                                setTimeout(() => {
+                                    this.engine.networkManager.syncAllScores();
+                                }, 200); // Small delay to ensure local updates go through first
+                            }
                         }
                         
                         // Broadcast the hit to all clients

@@ -16,6 +16,7 @@ export class NetworkManager {
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
         this.reconnectDelay = 1000; // Start with 1 second delay
+        this._lastScoreUpdates = null;
     }
 
     async connect() {
@@ -386,6 +387,13 @@ export class NetworkManager {
                 }
                 break;
 
+            case 'fullScoresSync':
+                if (!this.isHost && this.engine.scoreManager) {
+                    console.log('[NETWORK] Received full scores sync from host');
+                    this.engine.scoreManager.handleFullScoresSync(message.data);
+                }
+                break;
+
             default:
                 console.warn('[NETWORK] Unknown message type:', message.type);
         }
@@ -446,29 +454,70 @@ export class NetworkManager {
     }
 
     // Broadcast score update to all clients
-    broadcastScoreUpdate(playerId, score) {
-        if (!this.connected || !this.currentRoom) return;
+    broadcastScoreUpdate(playerId, score, forceSync = false) {
+        if (!this.currentRoom) {
+            console.warn('[NETWORK] Cannot broadcast score update - not in a room');
+            return;
+        }
         
-        console.log(`[NETWORK] Broadcasting score update: Player ${playerId} = ${score}`);
+        console.log(`[NETWORK] Broadcasting score update for player ${playerId}: ${score} ${forceSync ? '(forced sync)' : ''}`);
         
-        // Always send score update to all clients
-        this.send({
-            type: 'scoreUpdate',
-            data: {
-                playerId: playerId,
-                score: score
+        // Check if this is a first-hit scenario (going from 0 to 10)
+        const isFirstHit = score === 10 && playerId === this.localPlayerId;
+        
+        // Store last score update to prevent duplicates
+        if (!this._lastScoreUpdates) {
+            this._lastScoreUpdates = new Map();
+        }
+        
+        // Skip duplicate detection for forced syncs
+        if (!forceSync) {
+            const lastUpdate = this._lastScoreUpdates.get(playerId);
+            if (lastUpdate) {
+                const { score: lastScore, timestamp } = lastUpdate;
+                const timeSinceLastUpdate = Date.now() - timestamp;
+                
+                // Prevent duplicate broadcasts if same score sent within 500ms
+                if (lastScore === score && timeSinceLastUpdate < 500) {
+                    console.log(`[NETWORK] Ignoring duplicate score broadcast for ${playerId}: ${score} (sent ${timeSinceLastUpdate}ms ago)`);
+                    return;
+                }
             }
+        }
+        
+        // Record this update
+        this._lastScoreUpdates.set(playerId, {
+            score,
+            timestamp: Date.now()
         });
         
-        // Make sure our local score display is updated too
+        // For first hit scenario, add a slight delay to ensure client processing order
+        if (isFirstHit && !forceSync) {
+            console.log(`[NETWORK] First hit detected, adding delay for network synchronization`);
+            setTimeout(() => {
+                this.send({
+                    type: 'scoreUpdate',
+                    data: {
+                        playerId,
+                        score,
+                        isSync: forceSync
+                    }
+                });
+            }, 50);
+        } else {
+            // Regular broadcast for all other scenarios
+            this.send({
+                type: 'scoreUpdate',
+                data: {
+                    playerId,
+                    score,
+                    isSync: forceSync
+                }
+            });
+        }
+        
+        // Update our local UI when we broadcast a score
         if (this.engine.scoreManager) {
-            // First add the player if needed
-            if (!this.engine.scoreManager.scores.has(playerId)) {
-                this.engine.scoreManager.addPlayer(playerId);
-            }
-            
-            // Update the score directly to avoid broadcast loops
-            console.log(`[NETWORK] Setting local score: Player ${playerId} = ${score}`);
             this.engine.scoreManager.scores.set(playerId, score);
             this.engine.scoreManager.updateScoreDisplay();
             
@@ -540,6 +589,8 @@ export class NetworkManager {
         if (!this.connected || !this.currentRoom || !this.engine.playerManager.localPlayer) return;
 
         const now = performance.now();
+        
+        // Send player position updates
         if (now - this.lastUpdateTime > this.updateInterval) {
             this.lastUpdateTime = now;
             this.sendPlayerUpdate();
@@ -605,5 +656,34 @@ export class NetworkManager {
                 this.reconnectDelay = Math.min(this.reconnectDelay * 2, 10000);
             });
         }, this.reconnectDelay);
+    }
+
+    // Sync all scores from host to clients periodically
+    syncAllScores() {
+        if (!this.isHost || !this.engine.scoreManager) return;
+        
+        console.log('[NETWORK] Host performing periodic score sync');
+        
+        // Get all scores
+        const scores = this.engine.scoreManager.scores;
+        if (scores.size === 0) return;
+        
+        // Send a complete scores snapshot instead of individual updates
+        // This ensures clients have the exact same scores as the host
+        const scoresArray = Array.from(scores).map(([playerId, score]) => ({
+            playerId,
+            score
+        }));
+        
+        // Send a single complete scores update
+        this.send({
+            type: 'fullScoresSync',
+            data: {
+                scores: scoresArray,
+                timestamp: Date.now()
+            }
+        });
+        
+        console.log('[NETWORK] Sent full scores sync with all player scores');
     }
 }

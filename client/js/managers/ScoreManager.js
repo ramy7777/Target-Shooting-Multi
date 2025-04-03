@@ -151,9 +151,9 @@ class ScoreManager {
     }
 
     handleNetworkScoreUpdate(data) {
-        const { playerId, score } = data;
+        const { playerId, score, isSync } = data;
         
-        console.log(`[SCORE] Received network score update for Player ${playerId}: ${score}`);
+        console.log(`[SCORE] Received network score update for Player ${playerId}: ${score}${isSync ? ' (sync update)' : ''}`);
         
         // Enhanced debugging
         console.log(`[SCORE] Current scores before update:`, 
@@ -163,6 +163,28 @@ class ScoreManager {
         if (!this.scores.has(playerId)) {
             console.log(`[SCORE] Adding new player ${playerId} to score table`);
             this.addPlayer(playerId);
+        }
+        
+        // Check if this is a duplicate update for the same score (ignore for sync updates)
+        const currentScore = this.scores.get(playerId);
+        if (currentScore === score && !isSync) {
+            console.log(`[SCORE] Ignoring duplicate score update for Player ${playerId}: ${score}`);
+            return;
+        }
+        
+        // Detect abnormally large score jumps that suggest duplicate processing
+        // But skip this check for sync updates which are authoritative
+        if (!isSync && currentScore > 0 && score === currentScore + 20 && score % 20 === 0) {
+            console.log(`[SCORE] Detected potential duplicate scoring - ignoring update`);
+            return;
+        }
+        
+        // For sync updates, always accept the host's value
+        if (isSync) {
+            console.log(`[SCORE] Accepting authoritative score sync from host`);
+        } else if (this.engine.networkManager?.isHost && playerId !== this.engine.networkManager.localPlayerId) {
+            // If we're host and this is a non-host player's score, validate it
+            console.log(`[SCORE] Host validating client score update`);
         }
         
         // Update the score
@@ -304,6 +326,62 @@ class ScoreManager {
             
             this.scoresList.appendChild(scoreElement);
         });
+    }
+
+    handleFullScoresSync(data) {
+        if (!data || !data.scores || !Array.isArray(data.scores)) {
+            console.error('[SCORE] Invalid full scores sync data:', data);
+            return;
+        }
+        
+        console.log('[SCORE] Processing full scores sync from host:', data);
+        
+        // Store all existing player IDs to handle players that might not be in the sync data
+        const existingPlayerIds = new Set(this.scores.keys());
+        const syncedPlayerIds = new Set();
+        
+        // Replace all scores with authoritative scores from host
+        data.scores.forEach(playerData => {
+            const { playerId, score } = playerData;
+            
+            if (!playerId) {
+                console.warn('[SCORE] Skipping player with missing ID in sync data');
+                return;
+            }
+            
+            syncedPlayerIds.add(playerId);
+            
+            // Add player if needed
+            if (!this.scores.has(playerId)) {
+                console.log(`[SCORE] Adding new player ${playerId} from sync data`);
+                this.addPlayer(playerId);
+            }
+            
+            // Update score with authoritative host value
+            const currentScore = this.scores.get(playerId);
+            if (currentScore !== score) {
+                console.log(`[SCORE] Sync updating Player ${playerId} score: ${currentScore} → ${score}`);
+                this.scores.set(playerId, score);
+            }
+        });
+        
+        // Check for players that weren't in the sync data (optional - could be removed)
+        existingPlayerIds.forEach(playerId => {
+            if (!syncedPlayerIds.has(playerId)) {
+                console.log(`[SCORE] Player ${playerId} not in sync data, keeping current score`);
+            }
+        });
+        
+        // Update UI once after processing all scores
+        this.updateScoreDisplay();
+        
+        // Update VR Score UI with synced scores
+        if (this.vrScoreUI) {
+            console.log('[SCORE] Updating VR score display after score sync');
+            this.updateVRScores();
+        }
+        
+        console.log('[SCORE] Full scores sync completed');
     }
 }
 
