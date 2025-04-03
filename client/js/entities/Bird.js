@@ -254,9 +254,9 @@ export class Bird extends THREE.Group {
         
         // Keep position within a reasonable range
         const BOUNDS = {
-            minX: -6, maxX: 6,       // 3x smaller (was -18/18)
-            minY: 0.5, maxY: 5,      // Y-bounds remain the same
-            minZ: -6, maxZ: 6        // 3x smaller (was -18/18)
+            minX: -2, maxX: 2,       // 3x smaller (was -6/6)
+            minY: 1.5, maxY: 3.5,    // 3x smaller vertical range (was 0.5/5)
+            minZ: -2, maxZ: 2        // 3x smaller (was -6/6)
         };
         
         // Soft boundary enforcement - gradually push back if near edges

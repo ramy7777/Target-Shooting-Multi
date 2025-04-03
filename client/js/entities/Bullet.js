@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 export class Bullet extends THREE.Object3D {
-    constructor(position, direction, shooterId, speed = 0.21, lifespan = 2000) {
+    constructor(position, direction, shooterId, speed = 0.42, lifespan = 2000) {
         super();
         
         // Create bullet mesh
@@ -19,7 +19,7 @@ export class Bullet extends THREE.Object3D {
         this.position.copy(position);
         this.previousPosition = position.clone(); // Store previous position
         this.direction = direction.clone().normalize(); // Clone and normalize direction
-        this.velocity = this.direction.clone().multiplyScalar(0.2); // Store velocity for collision detection
+        this.velocity = this.direction.clone().multiplyScalar(0.4); // Store velocity for collision detection (2x faster)
         this.speed = speed;
         this.creationTime = Date.now();
         this.lifespan = lifespan;

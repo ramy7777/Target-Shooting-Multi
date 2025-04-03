@@ -7,6 +7,8 @@ export class BulletManager {
         this.engine = engine;
         this.bullets = new Set();
         this.lastTriggerState = [false, false];
+        this.lastShootTime = 0;
+        this.shootCooldown = 500; // Assuming a default cooldown value
         
         // Meta Quest 3 Button Mapping (same as InputManager)
         this.QUEST3_MAPPING = {
@@ -79,7 +81,7 @@ export class BulletManager {
             const triggerButton = gamepad.buttons[this.QUEST3_MAPPING.buttons.trigger];
 
             if (triggerButton.pressed && !this.lastTriggerState[i]) {
-                this.createBullet(controller, null, 0.21); // Changed from 0.3 to 0.21 for 30% slower speed
+                this.handleTriggerPress(controller);
                 // Add stronger haptic feedback for shooting
                 if (this.engine.inputManager) {
                     this.engine.inputManager.triggerHapticFeedback(gamepad, 0.8, 100);
@@ -89,7 +91,20 @@ export class BulletManager {
         });
     }
 
-    createBullet(controllerOrPosition, optionalDirection, speed = 0.3) { // Changed default from 1.0 to 0.3
+    handleTriggerPress(controller) {
+        // Skip if we can't shoot yet
+        if (Date.now() - this.lastShootTime < this.shootCooldown) {
+            return;
+        }
+
+        // Reset cooldown
+        this.lastShootTime = Date.now();
+
+        // Create bullet
+        this.createBullet(controller, null, 0.42); // Doubled speed from 0.21 to 0.42
+    }
+
+    createBullet(controllerOrPosition, optionalDirection, speed = 0.6) { // Doubled default speed from 0.3 to 0.6
         let position, direction;
 
         if (controllerOrPosition instanceof THREE.Vector3) {
