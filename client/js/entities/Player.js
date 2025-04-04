@@ -25,6 +25,13 @@ export class Player {
         // Create head group for VR camera
         this.headGroup = new THREE.Group();
         
+        // Create body group for VR body (make it a child of the headGroup instead of mesh)
+        this.bodyGroup = new THREE.Group();
+        this.headGroup.add(this.bodyGroup); // Now body is attached to head
+        
+        // Load VR body model
+        this.loadVRBodyModel();
+        
         if (!this.isLocal) {
             // Load the VR head model
             const loader = new GLTFLoader();
@@ -93,6 +100,83 @@ export class Player {
         }
     }
 
+    loadVRBodyModel() {
+        // Load the VR body model
+        const loader = new GLTFLoader();
+        const modelPath = '/assets/models/vr body1.glb';
+        
+        console.log('[PLAYER] Loading VR body model from path:', modelPath);
+        
+        loader.load(modelPath, (gltf) => {
+            console.log('[PLAYER] VR body model loaded successfully');
+            this.bodyModel = gltf.scene;
+            
+            // Scale and position adjustments for the body - reduce size by half
+            this.bodyModel.scale.set(0.4, 0.4, 0.4);
+            
+            // Position the body directly below the head, but moved up 0.5 units
+            this.bodyModel.position.set(0, -0.5, 0);
+            
+            // Rotate the body to face forward
+            this.bodyModel.rotation.y = Math.PI;
+            
+            // Enhance materials/textures
+            this.bodyModel.traverse((child) => {
+                if (child.isMesh) {
+                    // Improve existing materials
+                    if (child.material) {
+                        // Make materials more visible with better lighting response
+                        child.material.needsUpdate = true;
+                        
+                        // Ensure materials receive light properly
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        
+                        // Improve material rendering
+                        if (child.material.map) {
+                            // If texture exists, enhance it
+                            child.material.map.anisotropy = 16;
+                            child.material.map.needsUpdate = true;
+                        }
+                        
+                        // Adjust material properties for better appearance
+                        child.material.roughness = 0.3;  // Less rough for more shine
+                        child.material.metalness = 0.2;  // Slight metallic look
+                        child.material.envMapIntensity = 1.5;  // More environment reflection
+                        
+                        // Enhance colors if material is too dark
+                        if (child.material.color) {
+                            // Brighten the color slightly
+                            const color = child.material.color.clone();
+                            color.r = Math.min(1, color.r * 1.2);
+                            color.g = Math.min(1, color.g * 1.2);
+                            color.b = Math.min(1, color.b * 1.2);
+                            child.material.color = color;
+                        }
+                    }
+                }
+            });
+            
+            // Add the body to the bodyGroup
+            this.bodyGroup.add(this.bodyModel);
+            
+            // Hide body for local player in VR mode (first-person view)
+            if (this.isLocal && this.engine.renderer.xr.isPresenting) {
+                this.bodyModel.visible = false;
+            }
+        }, 
+        // onProgress callback
+        (xhr) => {
+            console.log(`[PLAYER] VR body model ${(xhr.loaded / xhr.total * 100)}% loaded`);
+        },
+        // onError callback
+        (error) => {
+            console.error('[PLAYER] Error loading VR body model:', error);
+            // Create a simple fallback body if model loading fails
+            this.createSimpleBody();
+        });
+    }
+
     update(delta) {
         if (this.isLocal) {
             if (this.engine.renderer.xr.isPresenting) {
@@ -115,6 +199,9 @@ export class Player {
                 const rigRotation = new THREE.Quaternion();
                 this.engine.cameraRig.getWorldQuaternion(rigRotation);
                 this.headGroup.quaternion.multiplyQuaternions(rigRotation, cameraWorldQuat);
+                
+                // We don't need to update body position separately anymore since it's attached to the head
+                // The body will automatically follow the head
                 
                 // Update controllers if needed
                 this.updateControllers();
@@ -168,9 +255,14 @@ export class Player {
 
                 // Update orbit controls target
                 this.engine.controls.target.copy(this.mesh.position);
-            }
-        }
 
+                // We don't need to update body position separately anymore since it's attached to the head
+            }
+        } else {
+            // For network players, we don't need to update body position separately
+            // since it's attached to the head
+        }
+        
         // Apply friction
         this.velocity.multiplyScalar(0.85);
     }
@@ -208,6 +300,8 @@ export class Player {
         if (data.headPosition) {
             // Update head position directly from camera position
             this.headGroup.position.fromArray(data.headPosition);
+            
+            // Body will automatically follow head since it's a child of headGroup
         }
 
         if (data.headRotation) {
@@ -220,8 +314,10 @@ export class Player {
                 )
             );
             this.headGroup.quaternion.copy(quaternion);
+            
+            // Body will automatically follow head rotation since it's a child
         }
-
+        
         if (data.controllers) {
             data.controllers.forEach((controllerData, index) => {
                 if (this.controllers[index]) {
@@ -258,12 +354,12 @@ export class Player {
             ];
         }
 
+        // No need to include body position in network updates anymore
         const update = {
             position: this.mesh.position.toArray(),
             headPosition: this.isLocal ? this.engine.camera.position.toArray() : this.headGroup.position.toArray(),
             headRotation: headRotation,
             controllers: this.controllers.map(controller => ({
-
                 position: controller.position.toArray(),
                 rotation: controller.quaternion.toArray()
             }))
@@ -273,7 +369,47 @@ export class Player {
     }
 
     cleanup() {
+        // Remove all meshes from the scene
         this.engine.scene.remove(this.mesh);
+        
+        // Dispose of geometries and materials
+        if (this.headModel) {
+            this.headModel.traverse((child) => {
+                if (child.isMesh) {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(material => material.dispose());
+                        } else {
+                            child.material.dispose();
+                        }
+                    }
+                }
+            });
+        }
+        
+        if (this.bodyModel) {
+            this.bodyModel.traverse((child) => {
+                if (child.isMesh) {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(material => material.dispose());
+                        } else {
+                            child.material.dispose();
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Clear references for garbage collection
+        this.mesh = null;
+        this.headGroup = null;
+        this.bodyGroup = null;
+        this.headModel = null;
+        this.bodyModel = null;
+        this.controllers = null;
     }
 
     onControllerSelect(controller) {
@@ -364,5 +500,115 @@ export class Player {
         
         // Add the head to the headGroup
         this.headGroup.add(head);
+    }
+
+    // Create a simple geometric body if model loading fails
+    createSimpleBody() {
+        console.log('[PLAYER] Creating simple body fallback');
+        const body = new THREE.Group();
+        
+        // Create shared materials with better appearance
+        const bodyMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x3355cc,
+            roughness: 0.3,
+            metalness: 0.2,
+            envMapIntensity: 1.5
+        });
+        
+        const legsMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x223377,
+            roughness: 0.3,
+            metalness: 0.2,
+            envMapIntensity: 1.5
+        });
+        
+        // Create torso - reduced to 2x original size (previously 4x)
+        const torso = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.5, 0.4, 1.2, 12),
+            bodyMaterial
+        );
+        torso.position.y = -0.6;
+        torso.castShadow = true;
+        torso.receiveShadow = true;
+        body.add(torso);
+        
+        // Create shoulders - reduced to 2x original size
+        const shoulders = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.3, 0.4, 0.2, 12),
+            bodyMaterial
+        );
+        shoulders.position.y = 0;
+        shoulders.rotation.z = Math.PI / 2;
+        shoulders.castShadow = true;
+        shoulders.receiveShadow = true;
+        body.add(shoulders);
+        
+        // Create arms - reduced to 2x original size
+        
+        // Left arm
+        const leftArm = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.16, 0.12, 1.0, 12),
+            bodyMaterial
+        );
+        leftArm.position.set(0.7, -0.2, 0);
+        leftArm.rotation.z = Math.PI / 18;
+        leftArm.castShadow = true;
+        leftArm.receiveShadow = true;
+        body.add(leftArm);
+        
+        // Right arm
+        const rightArm = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.16, 0.12, 1.0, 12),
+            bodyMaterial
+        );
+        rightArm.position.set(-0.7, -0.2, 0);
+        rightArm.rotation.z = -Math.PI / 18;
+        rightArm.castShadow = true;
+        rightArm.receiveShadow = true;
+        body.add(rightArm);
+        
+        // Create hips - reduced to 2x original size
+        const hips = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.4, 0.4, 0.2, 12),
+            legsMaterial
+        );
+        hips.position.y = -1.2;
+        hips.castShadow = true;
+        hips.receiveShadow = true;
+        body.add(hips);
+        
+        // Create legs - reduced to 2x original size
+        
+        // Left leg
+        const leftLeg = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.16, 0.16, 1.4, 12),
+            legsMaterial
+        );
+        leftLeg.position.set(0.2, -2.0, 0);
+        leftLeg.castShadow = true;
+        leftLeg.receiveShadow = true;
+        body.add(leftLeg);
+        
+        // Right leg
+        const rightLeg = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.16, 0.16, 1.4, 12),
+            legsMaterial
+        );
+        rightLeg.position.set(-0.2, -2.0, 0);
+        rightLeg.castShadow = true;
+        rightLeg.receiveShadow = true;
+        body.add(rightLeg);
+        
+        // Position at floor level - position is relative to the head now
+        body.position.y = -0.5;
+        
+        // Add the body to the bodyGroup
+        this.bodyGroup.add(body);
+        this.bodyModel = body;
+        
+        // Hide body for local player in VR mode (first-person view)
+        if (this.isLocal && this.engine.renderer.xr.isPresenting) {
+            this.bodyModel.visible = false;
+        }
     }
 }
