@@ -29,11 +29,11 @@ export class World {
         const platformRadius = 10;
 
         // Minimal ambient light
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.05); // Drastically reduced from 0.2 to 0.05
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.15); // Increased from 0.05 to 0.15
         this.engine.scene.add(ambientLight);
 
         // Very dim central light
-        const centralLight = new THREE.DirectionalLight(0xffffff, 0.1); // Reduced from 0.3 to 0.1
+        const centralLight = new THREE.DirectionalLight(0xffffff, 0.25); // Increased from 0.1 to 0.25
         centralLight.position.set(0, 10, 0);
         this.engine.scene.add(centralLight);
 
@@ -78,7 +78,7 @@ export class World {
             roughness: 0.4,
             metalness: 0.6,
             emissive: new THREE.Color(0x1111ff),
-            emissiveIntensity: 0.1
+            emissiveIntensity: 0.2
         });
 
         const platform = new THREE.Mesh(platformGeometry, platformMaterial);
@@ -91,7 +91,7 @@ export class World {
         // Add a grid helper that matches the platform size
         const gridHelper = new THREE.GridHelper(platformRadius * 2, 20, 0x0000ff, 0x404040);
         gridHelper.position.y = 0.01;
-        gridHelper.material.opacity = 0.3;
+        gridHelper.material.opacity = 0.5;
         gridHelper.material.transparent = true;
         this.engine.scene.add(gridHelper);
         this.objects.add(gridHelper);
@@ -103,7 +103,7 @@ export class World {
             const x = Math.cos(angle) * (platformRadius - 1);
             const z = Math.sin(angle) * (platformRadius - 1);
             
-            const light = new THREE.PointLight(0x4444ff, 0.05, platformRadius * 2); // Reduced from 0.2 to 0.05
+            const light = new THREE.PointLight(0x4444ff, 0.15, platformRadius * 2); // Increased from 0.05 to 0.15
             light.position.set(x, 2, z);
             this.engine.scene.add(light);
         }
@@ -113,7 +113,7 @@ export class World {
         const glowMaterial = new THREE.MeshBasicMaterial({
             color: 0x0033ff,
             transparent: true,
-            opacity: 0.2,
+            opacity: 0.4, // Increased from 0.2 to 0.4
             side: THREE.DoubleSide
         });
         
@@ -143,16 +143,16 @@ export class World {
             
             const envMap = pmremGenerator.fromEquirectangular(texture);
             const scaledTexture = texture.clone();
-            scaledTexture.intensity = 0.05; // Drastically reduced from 0.1 to 0.05
+            scaledTexture.intensity = 0.15; // Increased from 0.05 to 0.15
             
             // Set scene background and environment
             this.engine.scene.background = scaledTexture;
             this.engine.scene.environment = envMap.texture;
-            this.engine.scene.environment.intensity = 3.0; // Doubled from 1.5
+            this.engine.scene.environment.intensity = 4.0; // Increased from 3.0 to 4.0
             
-            // Change to ReinhardToneMapping with very low exposure
+            // Change to ReinhardToneMapping with increased exposure
             this.engine.renderer.toneMapping = THREE.ReinhardToneMapping;
-            this.engine.renderer.toneMappingExposure = 0.1; // Drastically reduced from 0.3 to 0.1
+            this.engine.renderer.toneMappingExposure = 0.25; // Increased from 0.1 to 0.25
             
             texture.dispose();
             pmremGenerator.dispose();
