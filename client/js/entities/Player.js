@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RifleModel } from '../models/RifleModel.js';
 
 export class Player {
@@ -25,85 +26,40 @@ export class Player {
         this.headGroup = new THREE.Group();
         
         if (!this.isLocal) {
-            // Create face model for VR player
-            const head = new THREE.Group();
+            // Load the VR head model
+            const loader = new GLTFLoader();
+            const modelPath = '/assets/models/vr head1.glb';
             
-            // Create head base
-            const headBase = new THREE.Mesh(
-                new THREE.SphereGeometry(0.15, 16, 16),
-                new THREE.MeshStandardMaterial({ color: 0xffcc99 })
-            );
-            head.add(headBase);
+            console.log('[PLAYER] Loading VR head model from path:', modelPath);
             
-            // Add eyes
-            const eyeGeometry = new THREE.SphereGeometry(0.025, 8, 8);
-            const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
-            
-            const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-            leftEye.position.set(0.05, 0.02, 0.12);
-            head.add(leftEye);
-            
-            const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-            rightEye.position.set(-0.05, 0.02, 0.12);
-            head.add(rightEye);
-            
-            // Add eyebrows
-            const eyebrowGeometry = new THREE.BoxGeometry(0.05, 0.01, 0.01);
-            const eyebrowMaterial = new THREE.MeshStandardMaterial({ color: 0x3d2314 });
-            
-            const leftEyebrow = new THREE.Mesh(eyebrowGeometry, eyebrowMaterial);
-            leftEyebrow.position.set(0.05, 0.07, 0.12);
-            leftEyebrow.rotation.z = -0.2;
-            head.add(leftEyebrow);
-            
-            const rightEyebrow = new THREE.Mesh(eyebrowGeometry, eyebrowMaterial);
-            rightEyebrow.position.set(-0.05, 0.07, 0.12);
-            rightEyebrow.rotation.z = 0.2;
-            head.add(rightEyebrow);
-            
-            // Add nose
-            const nose = new THREE.Mesh(
-                new THREE.ConeGeometry(0.02, 0.04, 4),
-                new THREE.MeshStandardMaterial({ color: 0xffbf80 })
-            );
-            nose.rotation.x = -Math.PI / 2;
-            nose.position.set(0, 0, 0.15);
-            head.add(nose);
-            
-            // Add mouth
-            const mouth = new THREE.Mesh(
-                new THREE.TorusGeometry(0.03, 0.008, 8, 16, Math.PI),
-                new THREE.MeshStandardMaterial({ color: 0x8b4513 })
-            );
-            mouth.rotation.x = Math.PI / 2;
-            mouth.rotation.z = Math.PI;
-            mouth.position.set(0, -0.05, 0.12);
-            head.add(mouth);
-            
-            // Add ears
-            const earGeometry = new THREE.CapsuleGeometry(0.015, 0.03, 4, 8);
-            const earMaterial = new THREE.MeshStandardMaterial({ color: 0xffcc99 });
-            
-            const leftEar = new THREE.Mesh(earGeometry, earMaterial);
-            leftEar.position.set(0.15, 0, 0);
-            leftEar.rotation.z = Math.PI / 2;
-            head.add(leftEar);
-            
-            const rightEar = new THREE.Mesh(earGeometry, earMaterial);
-            rightEar.position.set(-0.15, 0, 0);
-            rightEar.rotation.z = Math.PI / 2;
-            head.add(rightEar);
-            
-            // Rotate the entire head 180 degrees around Y axis
-            head.rotation.y = Math.PI;
-            
-            // Add the head to the headGroup
-            this.headGroup.add(head);
-            
-            // Only show head for network players
-            if (this.isLocal) {
-                head.visible = false;
-            }
+            loader.load(modelPath, (gltf) => {
+                console.log('[PLAYER] VR head model loaded successfully');
+                this.headModel = gltf.scene;
+                
+                // Scale and position adjustments if needed
+                this.headModel.scale.set(0.15, 0.15, 0.15);
+                
+                // Rotate the head back to original orientation
+                this.headModel.rotation.y = Math.PI;
+                
+                // Add the head to the headGroup
+                this.headGroup.add(this.headModel);
+                
+                // Only show head for network players
+                if (this.isLocal) {
+                    this.headModel.visible = false;
+                }
+            }, 
+            // onProgress callback
+            (xhr) => {
+                console.log(`[PLAYER] VR head model ${(xhr.loaded / xhr.total * 100)}% loaded`);
+            },
+            // onError callback
+            (error) => {
+                console.error('[PLAYER] Error loading VR head model:', error);
+                // Fall back to the simple geometric head
+                this.createSimpleHead();
+            });
         }
         this.mesh.add(this.headGroup);
         
@@ -330,5 +286,83 @@ export class Player {
 
     onMouseInteraction(interaction, isDown) {
         console.log('Mouse interaction:', isDown ? 'down' : 'up', interaction);
+    }
+
+    // Fallback method to create a simple geometric head if model loading fails
+    createSimpleHead() {
+        // Create face model for VR player
+        const head = new THREE.Group();
+        
+        // Create head base
+        const headBase = new THREE.Mesh(
+            new THREE.SphereGeometry(0.15, 16, 16),
+            new THREE.MeshStandardMaterial({ color: 0xffcc99 })
+        );
+        head.add(headBase);
+        
+        // Add eyes
+        const eyeGeometry = new THREE.SphereGeometry(0.025, 8, 8);
+        const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
+        
+        const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        leftEye.position.set(0.05, 0.02, 0.12);
+        head.add(leftEye);
+        
+        const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        rightEye.position.set(-0.05, 0.02, 0.12);
+        head.add(rightEye);
+        
+        // Add eyebrows
+        const eyebrowGeometry = new THREE.BoxGeometry(0.05, 0.01, 0.01);
+        const eyebrowMaterial = new THREE.MeshStandardMaterial({ color: 0x3d2314 });
+        
+        const leftEyebrow = new THREE.Mesh(eyebrowGeometry, eyebrowMaterial);
+        leftEyebrow.position.set(0.05, 0.07, 0.12);
+        leftEyebrow.rotation.z = -0.2;
+        head.add(leftEyebrow);
+        
+        const rightEyebrow = new THREE.Mesh(eyebrowGeometry, eyebrowMaterial);
+        rightEyebrow.position.set(-0.05, 0.07, 0.12);
+        rightEyebrow.rotation.z = 0.2;
+        head.add(rightEyebrow);
+        
+        // Add nose
+        const nose = new THREE.Mesh(
+            new THREE.ConeGeometry(0.02, 0.04, 4),
+            new THREE.MeshStandardMaterial({ color: 0xffbf80 })
+        );
+        nose.rotation.x = -Math.PI / 2;
+        nose.position.set(0, 0, 0.15);
+        head.add(nose);
+        
+        // Add mouth
+        const mouth = new THREE.Mesh(
+            new THREE.TorusGeometry(0.03, 0.008, 8, 16, Math.PI),
+            new THREE.MeshStandardMaterial({ color: 0x8b4513 })
+        );
+        mouth.rotation.x = Math.PI / 2;
+        mouth.rotation.z = Math.PI;
+        mouth.position.set(0, -0.05, 0.12);
+        head.add(mouth);
+        
+        // Add ears
+        const earGeometry = new THREE.CapsuleGeometry(0.015, 0.03, 4, 8);
+        const earMaterial = new THREE.MeshStandardMaterial({ color: 0xffcc99 });
+        
+        const leftEar = new THREE.Mesh(earGeometry, earMaterial);
+        leftEar.position.set(0.15, 0, 0);
+        leftEar.rotation.z = Math.PI / 2;
+        head.add(leftEar);
+        
+        const rightEar = new THREE.Mesh(earGeometry, earMaterial);
+        rightEar.position.set(-0.15, 0, 0);
+        rightEar.rotation.z = Math.PI / 2;
+        head.add(rightEar);
+        
+        // Rotate the head back to original orientation
+        head.rotation.y = Math.PI;
+        
+        // Add the head to the headGroup
+        this.headGroup.add(head);
     }
 }
