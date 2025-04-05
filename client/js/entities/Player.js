@@ -25,9 +25,15 @@ export class Player {
         // Create head group for VR camera
         this.headGroup = new THREE.Group();
         
-        // Create body group for VR body (make it a child of the headGroup instead of mesh)
+        // Create body group for VR body - make it a child of the mesh instead of the head
+        // This allows the body to be positioned and rotated independently from the head
         this.bodyGroup = new THREE.Group();
-        this.headGroup.add(this.bodyGroup); // Now body is attached to head
+        this.mesh.add(this.bodyGroup); // Attach to mesh instead of headGroup
+        
+        // Track head direction for body rotation
+        this.targetBodyRotation = 0;
+        this.bodyRotationSpeed = 3.0; // Speed to rotate body towards head direction
+        this.bodyTurnThreshold = 0.5; // Radians - when head turns beyond this angle, body starts to turn
         
         // Load VR body model
         this.loadVRBodyModel();
@@ -42,20 +48,20 @@ export class Player {
             loader.load(modelPath, (gltf) => {
                 console.log('[PLAYER] VR head model loaded successfully');
                 this.headModel = gltf.scene;
-                
+            
                 // Scale and position adjustments if needed
                 this.headModel.scale.set(0.15, 0.15, 0.15);
                 
                 // Rotate the head back to original orientation
                 this.headModel.rotation.y = Math.PI;
-                
-                // Add the head to the headGroup
+            
+            // Add the head to the headGroup
                 this.headGroup.add(this.headModel);
-                
-                // Only show head for network players
-                if (this.isLocal) {
+            
+            // Only show head for network players
+            if (this.isLocal) {
                     this.headModel.visible = false;
-                }
+            }
             }, 
             // onProgress callback
             (xhr) => {
@@ -111,11 +117,12 @@ export class Player {
             console.log('[PLAYER] VR body model loaded successfully');
             this.bodyModel = gltf.scene;
             
-            // Scale and position adjustments for the body - reduce size by half
+            // Scale and position adjustments for the body
             this.bodyModel.scale.set(0.4, 0.4, 0.4);
             
-            // Position the body directly below the head, but moved up 0.5 units
-            this.bodyModel.position.set(0, -0.5, 0);
+            // Position the body at floor level
+            // Since body is now a child of mesh (not head), position Y needs to account for head height
+            this.bodyModel.position.set(0, 1.05, 0); // Lowered from 1.3 to 1.05 (by 0.25 units)
             
             // Rotate the body to face forward
             this.bodyModel.rotation.y = Math.PI;
@@ -200,8 +207,12 @@ export class Player {
                 this.engine.cameraRig.getWorldQuaternion(rigRotation);
                 this.headGroup.quaternion.multiplyQuaternions(rigRotation, cameraWorldQuat);
                 
-                // We don't need to update body position separately anymore since it's attached to the head
-                // The body will automatically follow the head
+                // Update body position to be directly below the head
+                this.bodyGroup.position.x = cameraWorldPos.x;
+                this.bodyGroup.position.z = cameraWorldPos.z;
+                
+                // Get head Y rotation (yaw) to determine body rotation
+                this.updateBodyRotation(delta);
                 
                 // Update controllers if needed
                 this.updateControllers();
@@ -256,11 +267,29 @@ export class Player {
                 // Update orbit controls target
                 this.engine.controls.target.copy(this.mesh.position);
 
-                // We don't need to update body position separately anymore since it's attached to the head
+                // Update body position to match player position
+                this.bodyGroup.position.x = this.mesh.position.x;
+                this.bodyGroup.position.z = this.mesh.position.z;
+                
+                // In desktop mode, rotate body to match head rotation immediately
+                if (this.engine.camera) {
+                    // Extract the Y rotation from the camera's quaternion for body rotation
+                    const euler = new THREE.Euler().setFromQuaternion(this.engine.camera.quaternion, 'YXZ');
+                    this.bodyGroup.rotation.y = euler.y;
+                }
             }
         } else {
-            // For network players, we don't need to update body position separately
-            // since it's attached to the head
+            // For network players, update body position to match head position
+            // but keep rotation separate
+            this.bodyGroup.position.x = this.headGroup.position.x;
+            this.bodyGroup.position.z = this.headGroup.position.z;
+            
+            // Get the Y rotation from the head quaternion
+            const euler = new THREE.Euler().setFromQuaternion(this.headGroup.quaternion, 'YXZ');
+            this.targetBodyRotation = euler.y;
+            
+            // Smoothly rotate body towards head direction
+            this.updateBodyRotation(0.016); // Use fixed delta for network players
         }
         
         // Apply friction
@@ -301,7 +330,9 @@ export class Player {
             // Update head position directly from camera position
             this.headGroup.position.fromArray(data.headPosition);
             
-            // Body will automatically follow head since it's a child of headGroup
+            // Update body position X and Z to match head
+            this.bodyGroup.position.x = this.headGroup.position.x;
+            this.bodyGroup.position.z = this.headGroup.position.z;
         }
 
         if (data.headRotation) {
@@ -315,7 +346,14 @@ export class Player {
             );
             this.headGroup.quaternion.copy(quaternion);
             
-            // Body will automatically follow head rotation since it's a child
+            // Extract Y rotation for body target rotation
+            const euler = new THREE.Euler().setFromQuaternion(quaternion, 'YXZ');
+            this.targetBodyRotation = euler.y;
+        }
+        
+        if (data.bodyRotation !== undefined) {
+            // If body rotation is explicitly provided, use it
+            this.bodyGroup.rotation.y = data.bodyRotation;
         }
         
         if (data.controllers) {
@@ -354,11 +392,11 @@ export class Player {
             ];
         }
 
-        // No need to include body position in network updates anymore
         const update = {
             position: this.mesh.position.toArray(),
             headPosition: this.isLocal ? this.engine.camera.position.toArray() : this.headGroup.position.toArray(),
             headRotation: headRotation,
+            bodyRotation: this.bodyGroup.rotation.y,
             controllers: this.controllers.map(controller => ({
                 position: controller.position.toArray(),
                 rotation: controller.quaternion.toArray()
@@ -599,8 +637,8 @@ export class Player {
         rightLeg.receiveShadow = true;
         body.add(rightLeg);
         
-        // Position at floor level - position is relative to the head now
-        body.position.y = -0.5;
+        // Position at floor level - adjusted for being child of mesh instead of head
+        body.position.y = 1.05; // Lowered from 1.3 to 1.05 (by 0.25 units)
         
         // Add the body to the bodyGroup
         this.bodyGroup.add(body);
@@ -609,6 +647,38 @@ export class Player {
         // Hide body for local player in VR mode (first-person view)
         if (this.isLocal && this.engine.renderer.xr.isPresenting) {
             this.bodyModel.visible = false;
+        }
+    }
+
+    // New method to handle body rotation based on head direction
+    updateBodyRotation(delta) {
+        if (!this.bodyGroup) return;
+        
+        // Get the current head Y rotation (yaw) from the quaternion
+        const headEuler = new THREE.Euler().setFromQuaternion(this.headGroup.quaternion, 'YXZ');
+        const headYaw = headEuler.y;
+        
+        // Calculate the difference between head and body rotation
+        let rotDiff = headYaw - this.bodyGroup.rotation.y;
+        
+        // Normalize the difference to be between -PI and PI
+        while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+        while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+        
+        // Only start turning the body if the head has turned beyond the threshold
+        if (Math.abs(rotDiff) > this.bodyTurnThreshold) {
+            // Set the target rotation to follow the head
+            this.targetBodyRotation = headYaw;
+            
+            // Smoothly rotate the body towards the target rotation
+            const rotAmount = Math.sign(rotDiff) * this.bodyRotationSpeed * delta;
+            
+            // Limit rotation amount to not overshoot
+            if (Math.abs(rotAmount) > Math.abs(rotDiff)) {
+                this.bodyGroup.rotation.y = this.targetBodyRotation;
+            } else {
+                this.bodyGroup.rotation.y += rotAmount;
+            }
         }
     }
 }
